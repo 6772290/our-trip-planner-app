@@ -9,10 +9,13 @@ import {
   TransportMode,
   LocationBreakdown,
   RequestStatus,
+  ClarificationQuestion,
 } from '../types/experience';
+import { ExperiencePlanType } from '../types/experiencePlan';
 import { extractConstraintsAndWindows } from './constraintEngine';
 import { identifyNextClarificationQuestion } from './clarificationEngine';
 import { generateConceptualInspirations, CURRENT_DATA_SOURCE_STATUS } from './dataSourceProvider';
+import { analyzeContextualLocations, resolveNormalizedCity } from '../utils/locationResolver';
 
 export interface ParseOptions {
   userProfile?: UserProfile;
@@ -65,6 +68,31 @@ export function parseExperienceRequest(
       sourceNoteEn: 'Explicitly stated in request text',
       isConfirmed: true,
     });
+  } else if (
+    text.includes('הבן שלי') ||
+    text.includes('הבת שלי') ||
+    text.includes('הילד') ||
+    text.includes('הילדה') ||
+    text.includes('הילדים')
+  ) {
+    audienceType = 'custom';
+    const role = text.includes('הבן שלי')
+      ? 'הבן שלי'
+      : text.includes('הבת שלי')
+      ? 'הבת שלי'
+      : 'הילדים שלי';
+    participantsMentioned.push(role);
+    extractedFacts.push({
+      id: 'f_audience',
+      key: 'audience',
+      labelHe: 'משתתפים בפעילות',
+      labelEn: 'Participants',
+      value: `אני ו${role}`,
+      certainty: 'explicit',
+      sourceNoteHe: 'צוין במפורש בטקסט הבקשה',
+      sourceNoteEn: 'Explicitly stated in request text',
+      isConfirmed: true,
+    });
   } else if (text.includes('החבר') || text.includes('חברים') || text.includes('קבוצה') || text.includes('כולנו')) {
     audienceType = 'saved_group';
     participantsMentioned.push('קבוצת חברים');
@@ -83,17 +111,32 @@ export function parseExperienceRequest(
     audienceType = overrides.audience;
   }
 
-  // 2. Identify Experience Nature (with support for varied natural phrasings)
+  // 2. Identify Experience Nature (with decoupled culinary & dietary categories)
   let experienceType = overrides.experienceType || '';
   let isFood = false;
   let isMusic = false;
   let isTrip = false;
+  let isLocalOuting = false;
   let artistMentioned: string | undefined = undefined;
 
+  // Culinary cuisine keywords
+  const isSushi = text.includes('סושי') || text.includes('sushi') || text.includes('יפני');
+  const isItalian = text.includes('איטלקי') || text.includes('פיצה') || text.includes('פסטה');
+  const isMeat = text.includes('בשר') || text.includes('בשרים') || text.includes('סטייק');
+  const isAsian = text.includes('אסייתי') || text.includes('תאילנדי') || text.includes('סיני');
+  const isDairyCuisine = text.includes('חלבי');
+  const isFishCuisine = text.includes('דגים');
+
   const isFoodPhrase =
+    isSushi ||
+    isItalian ||
+    isMeat ||
+    isAsian ||
     text.includes('אוכל') ||
     text.includes('מסעדה') ||
     text.includes('ארוחה') ||
+    text.includes('ארוחת ערב') ||
+    text.includes('ארוחת צהריים') ||
     text.includes('יין') ||
     text.includes('בא לי לאכול') ||
     text.includes('רוצה לאכול') ||
@@ -117,6 +160,14 @@ export function parseExperienceRequest(
     text.includes('לחו״ל') ||
     text.includes('שבוע פנוי');
 
+  const isOutingPhrase =
+    text.includes('בילוי') ||
+    text.includes('לבלות') ||
+    text.includes('להוציא אותו') ||
+    text.includes('להוציא אותה') ||
+    text.includes('בא לי לצאת') ||
+    text.includes('לצאת הערב');
+
   if (text.includes('אנדרה ריו') || text.includes('andre rieu')) {
     artistMentioned = 'אנדרה ריו (André Rieu)';
     experienceType = 'מוזיקה / קונצרט חוג אמן';
@@ -135,15 +186,24 @@ export function parseExperienceRequest(
   } else if (isFoodPhrase) {
     isFood = true;
     experienceType = 'קולינריה ומסעדות';
+
+    let specificCuisine = '';
+    if (isSushi) specificCuisine = 'סושי / אסייתי';
+    else if (isItalian) specificCuisine = 'איטלקי / פיצה';
+    else if (isMeat) specificCuisine = 'בשרים';
+    else if (isDairyCuisine && isFishCuisine) specificCuisine = 'חלבי ודגים';
+    else if (isDairyCuisine) specificCuisine = 'חלבי';
+    else if (isFishCuisine) specificCuisine = 'דגים';
+
     extractedFacts.push({
       id: 'f_category',
       key: 'category',
       labelHe: 'סוג בילוי',
       labelEn: 'Category',
-      value: 'קולינריה ומסעדות',
+      value: specificCuisine ? `קולינריה: ${specificCuisine}` : 'קולינריה ומסעדות',
       certainty: 'explicit',
-      sourceNoteHe: 'זוהה מתוך ביטוי קולינרי בטקסט (היוריסטיקה שקופה)',
-      sourceNoteEn: 'Identified via culinary phrase (rule extraction)',
+      sourceNoteHe: 'זוהה מתוך ביטוי קולינרי בטקסט',
+      sourceNoteEn: 'Identified via culinary phrase',
       isConfirmed: true,
     });
   } else if (isMusicPhrase) {
@@ -174,6 +234,20 @@ export function parseExperienceRequest(
       sourceNoteEn: 'Identified from vacation/trip keywords',
       isConfirmed: true,
     });
+  } else if (isOutingPhrase) {
+    isLocalOuting = true;
+    experienceType = 'בילוי מקומי ופנאי';
+    extractedFacts.push({
+      id: 'f_category',
+      key: 'category',
+      labelHe: 'סוג בילוי',
+      labelEn: 'Category',
+      value: 'בילוי מקומי ופנאי',
+      certainty: 'explicit',
+      sourceNoteHe: 'זוהה מתוך ביטוי בילוי ופנאי',
+      sourceNoteEn: 'Identified from leisure outing keywords',
+      isConfirmed: true,
+    });
   }
 
   // Handle clarification override for experienceType
@@ -202,34 +276,63 @@ export function parseExperienceRequest(
     });
   }
 
-  // 3. Extract Locations without Auto-inventing
+  // 3. Extract Locations with syntactic contextual analysis (Mission 4)
+  const locAnalysis = analyzeContextualLocations(text);
   let permanentHome = profile?.permanentHomeLocation?.trim() || '';
   let departureLocation = overrides.departureLocation || profile?.defaultActivityDepartureLocation?.trim() || '';
   let destinationLocation = overrides.destinationLocation || '';
+  let meetingPointLocation = overrides.meetingPoint || '';
   let transportMode: TransportMode = 'undecided';
   let isFlightImplied = false;
 
-  // Explicit flight intent check
-  const isFlightExplicitlyMentioned =
-    text.includes('טיסה') ||
-    text.includes('לטוס') ||
-    text.includes('טיסות') ||
-    text.includes('flight');
+  // Record other participant's location if detected (e.g. "הבן שלי לומד בראשלצ")
+  let otherParticipantClarificationNeeded: ClarificationQuestion | null = null;
+  if (locAnalysis.otherParticipantLocation) {
+    const info = locAnalysis.otherParticipantLocation;
+    extractedFacts.push({
+      id: 'f_other_participant_loc',
+      key: 'other_participant_location',
+      labelHe: `מיקום של ${info.participantRole}`,
+      labelEn: `${info.participantRole} Location`,
+      value: info.city.canonicalNameHe,
+      certainty: 'explicit',
+      sourceNoteHe: `${info.participantRole} נמצא ב${info.city.canonicalNameHe} (אינו מקום מגוריך)`,
+      sourceNoteEn: `${info.participantRole} is located in ${info.city.canonicalNameEn}`,
+      isConfirmed: true,
+    });
 
-  // Destination detection from text
-  if (text.includes('איטליה') || text.includes('פירנצה') || text.includes('רומא') || text.includes('מילאנו')) {
-    destinationLocation = text.includes('פירנצה')
-      ? 'פירנצה, איטליה'
-      : text.includes('רומא')
-      ? 'רומא, איטליה'
-      : 'איטליה';
-    // Do NOT automatically force flight! Allow trains/car or undecided
-    if (isFlightExplicitlyMentioned || overrides.transportMode === 'flight') {
-      isFlightImplied = true;
-      transportMode = 'flight';
-    } else {
-      transportMode = 'undecided';
+    // If destination not yet clarified, formulate the natural question from Mission 4:
+    if (!overrides.destinationLocation && !overrides.destination_mode) {
+      otherParticipantClarificationNeeded = {
+        id: 'q_other_participant_location_action',
+        questionHe: info.suggestedClarificationHe,
+        questionEn: info.suggestedClarificationEn,
+        contextNoteHe: 'המערכת מזהה שהמיקום שייך למשתתף ואינה מניחה שזה מקום מגוריך או היעד הסופי',
+        contextNoteEn: 'System identifies the location belongs to participant, avoiding false home-base assumptions',
+        targetField: 'destinationLocation',
+        options: [
+          {
+            id: 'opt_hangout_there',
+            labelHe: `לבלות ב${info.city.canonicalNameHe} והסביבה`,
+            labelEn: `Hang out in ${info.city.canonicalNameEn}`,
+            payloadValue: info.city.canonicalNameHe,
+          },
+          {
+            id: 'opt_pickup_and_go',
+            labelHe: `לאסוף אותו מ${info.city.canonicalNameHe} ולנסוע למקום אחר`,
+            labelEn: `Pick up from ${info.city.canonicalNameEn} and go elsewhere`,
+            payloadValue: 'pickup_other_city',
+          },
+        ],
+        allowFreeText: true,
+      };
     }
+  }
+
+  // Handle explicit destination from analysis
+  if (locAnalysis.explicitDestinationCity) {
+    destinationLocation = locAnalysis.explicitDestinationCity.canonicalNameHe;
+    transportMode = locAnalysis.explicitDestinationCity.isInternational ? 'undecided' : 'car';
     extractedFacts.push({
       id: 'f_dest',
       key: 'destination',
@@ -237,31 +340,64 @@ export function parseExperienceRequest(
       labelEn: 'Destination',
       value: destinationLocation,
       certainty: 'explicit',
-      sourceNoteHe: 'נמסר במפורש בטקסט (אמצעי תחבורה נותר פתוח להחלטה)',
-      sourceNoteEn: 'Explicitly mentioned in text (Transport mode left open)',
+      sourceNoteHe: 'נמסר במפורש בטקסט',
+      sourceNoteEn: 'Explicitly mentioned in text',
+      isConfirmed: true,
+    });
+  } else if (text.includes('איטליה') || text.includes('פירנצה') || text.includes('רומא') || text.includes('מילאנו')) {
+    destinationLocation = text.includes('פירנצה')
+      ? 'פירנצה, איטליה'
+      : text.includes('רומא')
+      ? 'רומא, איטליה'
+      : 'איטליה';
+    transportMode = 'undecided';
+    extractedFacts.push({
+      id: 'f_dest',
+      key: 'destination',
+      labelHe: 'יעד מבוקש',
+      labelEn: 'Destination',
+      value: destinationLocation,
+      certainty: 'explicit',
+      sourceNoteHe: 'נמסר במפורש בטקסט',
+      sourceNoteEn: 'Explicitly mentioned in text',
       isConfirmed: true,
     });
   } else if (text.includes('אירופה')) {
     destinationLocation = 'אירופה';
-    if (isFlightExplicitlyMentioned || overrides.transportMode === 'flight') {
-      isFlightImplied = true;
-      transportMode = 'flight';
-    } else {
-      transportMode = 'undecided';
-    }
+    transportMode = 'undecided';
   } else if (text.includes('חו״ל') || text.includes('חול')) {
     destinationLocation = 'חו״ל';
-    if (isFlightExplicitlyMentioned) {
-      isFlightImplied = true;
-      transportMode = 'flight';
-    }
-  } else if (text.includes('תל אביב')) {
-    destinationLocation = 'תל אביב';
-    transportMode = 'car';
+    transportMode = 'undecided';
   }
 
-  // If local evening plan (e.g. "הערב" or local dinner), NEVER assume flight
-  if (text.includes('הערב') && !destinationLocation.includes('אירופה') && !destinationLocation.includes('איטליה')) {
+  // Handle explicit departure from analysis
+  if (locAnalysis.explicitDepartureCity) {
+    departureLocation = locAnalysis.explicitDepartureCity.canonicalNameHe;
+  }
+
+  // Handle meeting point from analysis
+  if (locAnalysis.meetingPointCity) {
+    meetingPointLocation = locAnalysis.meetingPointCity.canonicalNameHe;
+  }
+
+  // Check if international flight is implied: ONLY if flight is mentioned or destination is abroad!
+  const isFlightExplicitlyMentioned =
+    text.includes('טיסה') ||
+    text.includes('לטוס') ||
+    text.includes('טיסות') ||
+    text.includes('flight');
+
+  if (isFlightExplicitlyMentioned || locAnalysis.isFlightImplied || overrides.transportMode === 'flight') {
+    isFlightImplied = true;
+    transportMode = 'flight';
+  } else if (
+    text.includes('הערב') ||
+    text.includes('מסעדה') ||
+    isFood ||
+    isLocalOuting ||
+    (destinationLocation && !locAnalysis.explicitDestinationCity?.isInternational && !destinationLocation.includes('אירופה') && !destinationLocation.includes('איטליה'))
+  ) {
+    // Local domestic outing / food / evening: NEVER assume flight!
     isFlightImplied = false;
     transportMode = 'car';
   }
@@ -376,7 +512,12 @@ export function parseExperienceRequest(
     answeredClarifications: overrides,
   });
 
-  const clarificationQuestions = nextQuestion ? [nextQuestion] : [];
+  const clarificationQuestions: ClarificationQuestion[] = [];
+  if (otherParticipantClarificationNeeded) {
+    clarificationQuestions.push(otherParticipantClarificationNeeded);
+  } else if (nextQuestion) {
+    clarificationQuestions.push(nextQuestion);
+  }
 
   // 7. Determine Overall Status
   let status: RequestStatus = 'understood';
@@ -408,6 +549,20 @@ export function parseExperienceRequest(
     isFlightRequired: isFlightImplied,
   };
 
+  // 9. Determine Experience Plan Type for seamless rubric workspace navigation (Mission 1 & 6)
+  let planType: ExperiencePlanType = 'local_outing';
+  if (isTrip) {
+    planType = isFlightImplied ? 'vacation_abroad' : 'vacation_domestic';
+  } else if (isFood) {
+    planType = 'culinary';
+  } else if (isMusic || artistMentioned) {
+    planType = 'event';
+  } else if (text.includes('טיול יום') || text.includes('טיול בטבע')) {
+    planType = 'day_trip';
+  } else {
+    planType = 'local_outing';
+  }
+
   return {
     rawText: text,
     status,
@@ -425,5 +580,6 @@ export function parseExperienceRequest(
     conceptualIdeas,
     isFlightImplied,
     unverifiedArtistSearchRequested: artistMentioned,
+    planType,
   };
 }

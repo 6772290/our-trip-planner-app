@@ -142,6 +142,7 @@ export interface ParsedRequestResult {
   conceptualIdeas: ConceptualIdea[];
   isFlightImplied: boolean;
   unverifiedArtistSearchRequested?: string; // e.g. "אנדרה ריו"
+  planType?: 'local_outing' | 'culinary' | 'event' | 'day_trip' | 'vacation_domestic' | 'vacation_abroad';
 }
 
 export interface PreferenceItem {

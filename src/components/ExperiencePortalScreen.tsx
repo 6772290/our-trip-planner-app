@@ -15,6 +15,8 @@ import {
   CertaintyLevel,
 } from '../types/experience';
 import { parseExperienceRequest } from '../engine/requestParser';
+import { ExperiencePlan, ExperiencePlanType } from '../types/experiencePlan';
+import { createPlanFromParsedResult } from '../utils/planSynchronizer';
 import { useLanguage } from '../i18n/LanguageContext';
 import { AirportSearchInput } from './AirportSearchInput';
 import {
@@ -57,6 +59,7 @@ interface ExperiencePortalScreenProps {
     tripType?: 'solo' | 'couple' | 'friends' | 'family';
   }) => void;
   onExploreExistingTrips: () => void;
+  onOpenPlanWorkspace?: (plan: ExperiencePlan) => void;
 }
 
 export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
@@ -68,6 +71,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
   onResetToEmpty,
   onNavigateToTripWizard,
   onExploreExistingTrips,
+  onOpenPlanWorkspace,
 }) => {
   const { language } = useLanguage();
 
@@ -310,23 +314,40 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
               </div>
             </div>
 
-            {/* Bridge to 5-Step Trip Planner button if relevant */}
-            {parsedResult.isFlightImplied || parsedResult.timeWindows.length > 0 ? (
-              <button
-                type="button"
-                onClick={() =>
-                  onNavigateToTripWizard({
-                    title: parsedResult.rawText.slice(0, 40),
-                    destination: parsedResult.locations.destinationLocation || '',
-                    tripType: parsedResult.audienceType === 'couple' ? 'couple' : 'friends',
-                  })
-                }
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold transition-all cursor-pointer self-start sm:self-center shadow-xs"
-              >
-                <span>{language === 'he' ? 'העבר לתכנון טיול מלא' : 'Transfer to Trip Planner'}</span>
-                <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
-              </button>
-            ) : null}
+            {/* Action buttons */}
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+              {onOpenPlanWorkspace && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const plan = createPlanFromParsedResult(parsedResult, userProfile, contacts);
+                    onOpenPlanWorkspace(plan);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  <span>{language === 'he' ? 'פתח מסך תכנון חכם (רובריקות)' : 'Open Planning Rubrics'}</span>
+                </button>
+              )}
+
+              {/* Bridge to 5-Step Trip Planner button if relevant */}
+              {(parsedResult.isFlightImplied || parsedResult.timeWindows.length > 0 || parsedResult.planType?.startsWith('vacation')) ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onNavigateToTripWizard({
+                      title: parsedResult.rawText.slice(0, 40),
+                      destination: parsedResult.locations.destinationLocation || '',
+                      tripType: parsedResult.audienceType === 'couple' ? 'couple' : 'friends',
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                >
+                  <span>{language === 'he' ? 'אשף טיול ב-5 שלבים' : '5-Step Trip Wizard'}</span>
+                  <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {/* ACTIVE ANSWERED CLARIFICATIONS PILLS */}
@@ -671,6 +692,34 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                 </div>
               ))}
             </div>
+
+            {/* Bottom Proceed to Workspace Banner */}
+            {onOpenPlanWorkspace && (
+              <div className="mt-6 p-5 rounded-2xl bg-gradient-to-r from-amber-50 to-stone-50 border border-amber-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="space-y-1 text-center sm:text-start">
+                  <span className="font-bold text-sm text-stone-900 block">
+                    {language === 'he' ? 'מוכן להמשיך לתכנון המדויק?' : 'Ready to refine your plan?'}
+                  </span>
+                  <span className="text-xs text-stone-600 block">
+                    {language === 'he'
+                      ? 'כל הפרטים שנאספו (משתתפים, זמנים, כשרות, מיקומים ותקציב) סונכרנו ומחכים לך במסך הרובריקות האינטראקטיבי.'
+                      : 'All captured details (participants, dates, dietary, locations, budget) are synced in the interactive workspace.'}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const plan = createPlanFromParsedResult(parsedResult, userProfile, contacts);
+                    onOpenPlanWorkspace(plan);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap flex items-center gap-2"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                  <span>{language === 'he' ? 'פתח מסך תכנון חכם' : 'Open Planning Workspace'}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

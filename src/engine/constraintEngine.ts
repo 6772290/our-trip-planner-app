@@ -192,8 +192,51 @@ export function extractConstraintsAndWindows(
     });
   }
 
-  // 2. Shabbat & Religious Constraints (Strictly separated into distinct logical categories)
-  if (clean.includes('שישי') && (clean.includes('10:00') || clean.includes('10 בבוקר'))) {
+  // 2. Shabbat & Religious Constraints (Independent departure, return, and preference evaluation)
+  let shabbatConstraintAdded = false;
+
+  // 2a. Departure constraint (motzei shabbat / after shabbat)
+  const isThreeHoursAfterShabbat =
+    /(?:3|שלוש)\s*שעות\s*(?:אחרי|מ|לאחר|ממוצאי)\s*(?:ה?שבת|צאת\s*ה?שבת|הבדלה)/.test(clean) ||
+    clean.includes('3 שעות מצאת') ||
+    clean.includes('3 שעות אחרי צאת') ||
+    clean.includes('שלוש שעות אחרי צאת');
+
+  if (isThreeHoursAfterShabbat) {
+    constraints.push({
+      id: 'c_shabbat_three_hours_after',
+      type: 'shabbat_holiday',
+      subtype: 'depart_three_hours_after_shabbat',
+      descriptionHe: 'דרישה לצאת לפחות שלוש שעות לאחר צאת שבת (מרווח זמן מחייב להתארגנות ונסיעה)',
+      descriptionEn: 'Mandatory departure at least 3 hours after Shabbat ends',
+      isHardConstraint: true,
+      certainty: 'explicit',
+      sourceText: text,
+    });
+    shabbatConstraintAdded = true;
+  } else if (
+    clean.includes('רק אחרי צאת שבת') ||
+    clean.includes('אחרי צאת שבת') ||
+    clean.includes('רק במוצאי שבת') ||
+    clean.includes('במוצאי שבת') ||
+    clean.includes('מוצ״ש') ||
+    clean.includes('מוצש')
+  ) {
+    constraints.push({
+      id: 'c_shabbat_depart_after',
+      type: 'shabbat_holiday',
+      subtype: 'depart_only_after_shabbat',
+      descriptionHe: 'אפשרות לצאת רק לאחר צאת שבת (אילוץ קשיח — שעת מוצ״ש תלויה במיקום ובתאריך)',
+      descriptionEn: 'Departure permitted only after Shabbat concludes',
+      isHardConstraint: true,
+      certainty: 'explicit',
+      sourceText: text,
+    });
+    shabbatConstraintAdded = true;
+  }
+
+  // 2b. Return constraint (Friday morning deadline / return before Shabbat) - INDEPENDENT OF DEPARTURE!
+  if (clean.includes('שישי') && (clean.includes('10:00') || clean.includes('10 בבוקר') || clean.includes('עד 10'))) {
     constraints.push({
       id: 'c_shabbat_friday_morning',
       type: 'shabbat_holiday',
@@ -207,44 +250,7 @@ export function extractConstraintsAndWindows(
       targetTime: '10:00',
     });
     isHardDeadlinePresent = true;
-  } else if (clean.includes('שלוש שעות אחרי צאת שבת') || clean.includes('3 שעות אחרי צאת שבת')) {
-    constraints.push({
-      id: 'c_shabbat_three_hours_after',
-      type: 'shabbat_holiday',
-      subtype: 'depart_three_hours_after_shabbat',
-      descriptionHe: 'דרישה לצאת לפחות שלוש שעות לאחר צאת שבת (מרווח זמן מחייב להתארגנות ונסיעה)',
-      descriptionEn: 'Mandatory departure at least 3 hours after Shabbat ends',
-      isHardConstraint: true,
-      certainty: 'explicit',
-      sourceText: text,
-    });
-  } else if (clean.includes('רק אחרי צאת שבת') || clean.includes('אחרי צאת שבת') || clean.includes('רק במוצאי שבת')) {
-    constraints.push({
-      id: 'c_shabbat_depart_after',
-      type: 'shabbat_holiday',
-      subtype: 'depart_only_after_shabbat',
-      descriptionHe: 'אפשרות לצאת רק לאחר צאת שבת (אילוץ קשיח — שעת מוצ״ש תלויה במיקום ובתאריך)',
-      descriptionEn: 'Departure permitted only after Shabbat concludes',
-      isHardConstraint: true,
-      certainty: 'explicit',
-      sourceText: text,
-    });
-  } else if (
-    clean.includes('העדפה להיות בבית בשבת') ||
-    clean.includes('מעדיף להיות בבית בשבת') ||
-    clean.includes('מעדיפים להיות בבית בשבת') ||
-    clean.includes('מעדיף לחזור לשבת')
-  ) {
-    constraints.push({
-      id: 'c_shabbat_prefer_home',
-      type: 'shabbat_holiday',
-      subtype: 'prefer_home_for_shabbat',
-      descriptionHe: 'העדפה לחזור ולהיות בבית בשבת (העדפה רכה וגמישה, אינה אילוץ קשיח)',
-      descriptionEn: 'Soft preference to be home for Shabbat',
-      isHardConstraint: false, // Soft preference!
-      certainty: 'explicit',
-      sourceText: text,
-    });
+    shabbatConstraintAdded = true;
   } else if (
     clean.includes('חובה לחזור לפני שבת') ||
     clean.includes('חייב לחזור לפני שבת') ||
@@ -263,12 +269,36 @@ export function extractConstraintsAndWindows(
       sourceText: text,
     });
     isHardDeadlinePresent = true;
-  } else if (clean.includes('שומר שבת') || clean.includes('שבת')) {
+    shabbatConstraintAdded = true;
+  }
+
+  // 2c. Soft preference for being home on Shabbat
+  if (
+    clean.includes('העדפה להיות בבית בשבת') ||
+    clean.includes('מעדיף להיות בבית בשבת') ||
+    clean.includes('מעדיפים להיות בבית בשבת') ||
+    clean.includes('מעדיף לחזור לשבת')
+  ) {
+    constraints.push({
+      id: 'c_shabbat_prefer_home',
+      type: 'shabbat_holiday',
+      subtype: 'prefer_home_for_shabbat',
+      descriptionHe: 'העדפה לחזור ולהיות בבית בשבת (העדפה רכה וגמישה, אינה אילוץ קשיח)',
+      descriptionEn: 'Soft preference to be home for Shabbat',
+      isHardConstraint: false,
+      certainty: 'explicit',
+      sourceText: text,
+    });
+    shabbatConstraintAdded = true;
+  }
+
+  // 2d. General Shabbat observance if no specific constraint was added above
+  if (!shabbatConstraintAdded && (clean.includes('שומר שבת') || clean.includes('שומרי שבת') || clean.includes('שבת'))) {
     constraints.push({
       id: 'c_shabbat_general',
       type: 'shabbat_holiday',
       subtype: 'general_shabbat_observance',
-      descriptionHe: 'שמירת שבת (אילוץ הלכתי כללי שיש לקחת בחשבון בתכנון)',
+      descriptionHe: 'שמירת שבת (אילוץ הלכתי שיש לקחת בחשבון בתכנון)',
       descriptionEn: 'General Shabbat observance',
       isHardConstraint: true,
       certainty: 'explicit',
@@ -276,18 +306,48 @@ export function extractConstraintsAndWindows(
     });
   }
 
-  // 3. Dietary & Kosher constraints
-  if (clean.includes('כשר') || clean.includes('חלבי או דגים') || clean.includes('כשרה')) {
-    const isDairyOrFish = clean.includes('חלבי') || clean.includes('דגים');
+  // 3. Dietary & Kosher constraints (Strictly decoupled from culinary cuisines like dairy/fish/sushi)
+  const isMehadrin = clean.includes('מהדרין') || clean.includes('למהדרין');
+  const isKosher = isMehadrin || clean.includes('כשר') || clean.includes('כשרה');
+
+  if (isKosher) {
     constraints.push({
       id: 'c_kosher',
       type: 'dietary_kosher',
-      descriptionHe: isDairyOrFish
-        ? 'מסעדה כשרה, בדגש על חלבי או דגים (אילוץ מחייב)'
-        : 'הקפדה על כשרות (אילוץ מחייב)',
-      descriptionEn: isDairyOrFish
-        ? 'Kosher restaurant, dairy or fish focus (Mandatory)'
+      subtype: isMehadrin ? 'kosher_mehadrin' : 'kosher_standard',
+      descriptionHe: isMehadrin
+        ? 'הקפדה על כשרות למהדרין (אילוץ תזונתי והלכתי מחייב)'
+        : 'הקפדה על כשרות (אילוץ תזונתי מחייב)',
+      descriptionEn: isMehadrin
+        ? 'Kosher Mehadrin supervision required (Mandatory)'
         : 'Kosher supervision required (Mandatory)',
+      isHardConstraint: true,
+      certainty: 'explicit',
+      sourceText: text,
+    });
+  }
+
+  // 3b. Allergies as mandatory safety constraints
+  if (
+    clean.includes('אלרגיה') ||
+    clean.includes('אלרגי') ||
+    clean.includes('רגישות') ||
+    clean.includes('צליאק') ||
+    clean.includes('ללא גלוטן')
+  ) {
+    let allergenName = 'אלרגיה / רגישות';
+    if (clean.includes('צליאק') || clean.includes('ללא גלוטן')) allergenName = 'גלוטן (צליאק)';
+    else if (clean.includes('בוטנים')) allergenName = 'בוטנים';
+    else if (clean.includes('אגוזים')) allergenName = 'אגוזים';
+    else if (clean.includes('שומשום')) allergenName = 'שומשום';
+    else if (clean.includes('לקטוז')) allergenName = 'לקטוז';
+
+    constraints.push({
+      id: 'c_allergy_safety',
+      type: 'dietary_kosher',
+      subtype: 'allergy_safety',
+      descriptionHe: `אילוץ בטיחות תזונתי: רגישות/אלרגיה אל ${allergenName} (חובה לוודא מול המקום)`,
+      descriptionEn: `Dietary safety constraint: Allergy to ${allergenName} (Requires verification)`,
       isHardConstraint: true,
       certainty: 'explicit',
       sourceText: text,

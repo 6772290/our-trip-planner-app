@@ -16,11 +16,13 @@ import { CreateTripScreen } from './components/CreateTripScreen';
 import { QuestionnaireScreen } from './components/QuestionnaireScreen';
 import { SummaryRecommendationsScreen } from './components/SummaryRecommendationsScreen';
 import { ExperiencePortalScreen } from './components/ExperiencePortalScreen';
+import { ExperiencePlanWorkspace } from './components/ExperiencePlanWorkspace';
+import { ExperiencePlan } from './types/experiencePlan';
 import { ProfileAndPrivacyModal, AccountModalTab } from './components/ProfileAndPrivacyModal';
 import { InfoModal } from './components/InfoModal';
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
 
-type AppView = 'experiences' | 'welcome' | 'home' | 'create_trip' | 'questionnaire' | 'summary';
+type AppView = 'experiences' | 'experience_plan' | 'welcome' | 'home' | 'create_trip' | 'questionnaire' | 'summary';
 
 const STORAGE_KEY = 'our_trip_applet_state_v1';
 const PROFILE_STORAGE_KEY = 'our_trip_profile_v1';
@@ -96,6 +98,7 @@ function AppContent() {
   });
 
   const [currentView, setCurrentView] = useState<AppView>('experiences');
+  const [currentExperiencePlan, setCurrentExperiencePlan] = useState<ExperiencePlan | null>(null);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
   const [modalType, setModalType] = useState<'how_it_works' | 'faq' | null>(null);
@@ -325,6 +328,21 @@ function AppContent() {
             onResetToEmpty={handleResetToEmptyProfile}
             onNavigateToTripWizard={(initial) => handleStartPlanning(initial)}
             onExploreExistingTrips={() => setCurrentView('home')}
+            onOpenPlanWorkspace={(plan) => {
+              setCurrentExperiencePlan(plan);
+              setCurrentView('experience_plan');
+            }}
+          />
+        )}
+
+        {currentView === 'experience_plan' && currentExperiencePlan && (
+          <ExperiencePlanWorkspace
+            plan={currentExperiencePlan}
+            userProfile={userProfile}
+            contacts={contacts}
+            onUpdatePlan={setCurrentExperiencePlan}
+            onBackToPortal={() => setCurrentView('experiences')}
+            onProceedToTripWizard={(data) => handleStartPlanning(data)}
           />
         )}
 
