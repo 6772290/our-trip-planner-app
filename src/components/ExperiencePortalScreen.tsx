@@ -126,90 +126,48 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
     handleAnalyze(inputText, {});
   };
 
+  // Re-run analysis immediately when userProfile, contacts, or savedGroups changes
+  useEffect(() => {
+    if (inputText.trim()) {
+      handleAnalyze(inputText, clarifiedOverrides);
+    } else {
+      setParsedResult(null);
+    }
+  }, [userProfile, contacts, savedGroups]);
+
+  const handleResetProfile = () => {
+    setClarifiedOverrides({});
+    setFreeTextClarification('');
+    onResetToEmpty();
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-8">
-      {/* Top Banner & Philosophy */}
+      {/* Clean Hero Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-stone-900 via-stone-850 to-amber-950 text-white p-6 sm:p-10 shadow-xl">
         <div className="relative z-10 max-w-3xl space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold border border-amber-500/30">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{language === 'he' ? 'חוויה לפני לוגיסטיקה' : 'Experience Before Logistics'}</span>
-            </div>
-
-            {userProfile.isDemo ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/30 text-amber-200 text-xs font-semibold border border-amber-400/40">
-                <span>{language === 'he' ? 'מצב הדגמה פעיל (דן כהן)' : 'Demo Data Active'}</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
-                <span>{language === 'he' ? 'פרופיל אישי נקי' : 'Clean Personal Profile'}</span>
-              </span>
-            )}
-          </div>
-
           <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
             {language === 'he'
-              ? 'מה תרצו לחוות ולעשות ביחד?'
-              : 'What experience would you love to create?'}
+              ? 'מה מתחשק לך לעשות?'
+              : 'What are you in the mood for?'}
           </h1>
 
-          <p className="text-stone-300 text-xs sm:text-sm leading-relaxed">
+          <p className="text-stone-300 text-xs sm:text-base leading-relaxed">
             {language === 'he'
-              ? 'מנוע תכנון חכם המבוסס על שפה טבעית, זיהוי אילוצים ושאלות הבהרה מדויקות. ללא המצאת עובדות וללא הנחות מוקדמות.'
-              : 'Intelligent planning engine driven by natural language, constraint detection, and focused clarifications. Zero fake facts and zero assumptions.'}
+              ? 'ספר לנו מה מעניין אותך, ונעזור לך למצוא את החוויה המתאימה — לבד, בזוג או עם חברים.'
+              : "Tell us what interests you, and we'll help find the right experience — solo, as a couple, or with friends."}
           </p>
-
-          {/* Quick controls */}
-          <div className="pt-2 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={onOpenPrivacyCenter}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-stone-100 text-xs font-bold transition-all border border-white/15 cursor-pointer backdrop-blur-xs"
-            >
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>{language === 'he' ? 'מרכז פרטיות ופרופיל' : 'Privacy & Profile'}</span>
-            </button>
-
-            {userProfile.isDemo ? (
-              <button
-                type="button"
-                onClick={onResetToEmpty}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all border border-stone-600 cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>{language === 'he' ? 'מעבר לפרופיל נקי' : 'Switch to Clean Profile'}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onLoadDemoData}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-800/80 hover:bg-amber-700 text-white text-xs font-bold transition-all cursor-pointer"
-              >
-                <span>{language === 'he' ? 'טען נתוני הדגמה' : 'Load Demo Data'}</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={onExploreExistingTrips}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800/60 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all cursor-pointer"
-            >
-              <Compass className="w-4 h-4" />
-              <span>{language === 'he' ? 'רשימת הטיולים השמורים' : 'Saved Trips'}</span>
-            </button>
-          </div>
         </div>
       </div>
 
       {/* Main Request Input Panel */}
       <div className="bg-white rounded-3xl border border-stone-200 p-5 sm:p-8 shadow-sm space-y-6">
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="block text-sm font-bold text-stone-900">
               {language === 'he'
-                ? 'כתבו בקשה חופשית (סוג בילוי, משתתפים, חלונות תאריכים או אילוצים):'
-                : 'Describe your request freely (experience type, participants, date windows, constraints):'}
+                ? 'ספר לנו על החוויה שמתחשק לך לחוות:'
+                : 'Tell us about the experience you would like to have:'}
             </label>
             {Object.keys(clarifiedOverrides).length > 0 && (
               <button
@@ -218,7 +176,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                 className="text-xs text-amber-800 hover:text-amber-900 font-bold flex items-center gap-1 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>{language === 'he' ? 'אפס תשובות הבהרה' : 'Reset clarifications'}</span>
+                <span>{language === 'he' ? 'איפוס תשובות' : 'Reset answers'}</span>
               </button>
             )}
           </div>
@@ -229,60 +187,76 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
             onChange={(e) => setInputText(e.target.value)}
             placeholder={
               language === 'he'
-                ? 'לדוגמה: "אשתי ואני לבד הערב, מה אתה מציע?", "אני רוצה לראות הופעה של אנדרה ריו באירופה", או "יש לי ארבעה ימים פנויים באחד משני שבועות ואני חייב לחזור לפני שבת"...'
-                : 'e.g. "My partner and I are free tonight, what do you suggest?", "I want to see André Rieu in Europe", or "I have 4 free days in one of two weeks and must return before Shabbat"...'
+                ? 'לדוגמה: "ארוחת ערב טובה הערב", "הופעה של אנדרה ריו", "סוף שבוע רגוע בצפון", או "יש לנו ארבעה ימים פנויים באחד משני שבועות"...'
+                : 'e.g. "A nice dinner tonight", "André Rieu concert", "Relaxing weekend up north", or "We have 4 free days in one of two weeks"...'
             }
             className="w-full p-4 rounded-2xl border border-stone-300 text-sm focus:ring-2 focus:ring-amber-800 focus:border-amber-800 transition-all text-stone-900 placeholder:text-stone-400"
           />
 
-          {/* Preset Buttons for easy testing of real edge cases */}
-          <div className="flex items-center gap-2 flex-wrap pt-1 text-xs text-stone-600">
-            <span className="font-semibold text-stone-500">
-              {language === 'he' ? 'מבחני מערכת לדוגמה:' : 'System test examples:'}
+          {/* Natural Examples */}
+          <div className="space-y-1.5 pt-1">
+            <span className="text-xs font-semibold text-stone-500 block">
+              {language === 'he' ? 'דוגמאות לבקשות:' : 'Examples:'}
             </span>
-            <button
-              type="button"
-              onClick={() => handleApplyPreset('אשתי ואני לבד הערב, מה אתה מציע?')}
-              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-            >
-              🍷 {language === 'he' ? 'אשתי ואני לבד הערב' : 'Partner & I free tonight'}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleApplyPreset('אני רוצה לראות הופעה של אנדרה ריו, לא משנה באיזו מדינה')}
-              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-            >
-              🎻 {language === 'he' ? 'אנדרה ריו (ללא תלות במדינה)' : 'André Rieu anywhere'}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                handleApplyPreset(
-                  'יש לי ארבעה ימים פנויים באחד משני שבועות, חייב לחזור לפני שבת ומחפש מסעדה כשרה'
-                )
-              }
-              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-            >
-              🗓️ {language === 'he' ? '4 ימים בשני שבועות + שבת + כשר' : '4 days in 2 weeks + Shabbat'}
-            </button>
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('ארוחת ערב טובה הערב')}
+                className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-amber-100 hover:text-amber-900 text-stone-800 border border-stone-200 transition-colors cursor-pointer"
+              >
+                🍽️ {language === 'he' ? 'ארוחת ערב טובה הערב' : 'A nice dinner tonight'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('הופעה בסוף השבוע')}
+                className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-amber-100 hover:text-amber-900 text-stone-800 border border-stone-200 transition-colors cursor-pointer"
+              >
+                🎶 {language === 'he' ? 'הופעה בסוף השבוע' : 'Concert this weekend'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('סוף שבוע רגוע בצפון')}
+                className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-amber-100 hover:text-amber-900 text-stone-800 border border-stone-200 transition-colors cursor-pointer"
+              >
+                🌲 {language === 'he' ? 'סוף שבוע רגוע בצפון' : 'Relaxing weekend up north'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('הופעה של אנדרה ריו')}
+                className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-amber-100 hover:text-amber-900 text-stone-800 border border-stone-200 transition-colors cursor-pointer"
+              >
+                🎻 {language === 'he' ? 'הופעה של אנדרה ריו' : 'André Rieu concert'}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleApplyPreset(
+                    'יש לי ארבעה ימים פנויים באחד משני שבועות, חייב לחזור לפני שבת ומחפש מסעדה כשרה'
+                  )
+                }
+                className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-amber-100 hover:text-amber-900 text-stone-800 border border-stone-200 transition-colors cursor-pointer"
+              >
+                🗓️ {language === 'he' ? '4 ימים באחד משני שבועות' : '4 days in 1 of 2 weeks'}
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Action Button: Run Request Understanding Engine */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-stone-100">
+        {/* Action Button: Clear 'חיפוש חוויות' */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-stone-100">
           <div className="text-xs text-stone-500">
             {language === 'he'
-              ? 'המנוע מנתח אילוצים קשיחים, מזהה מידע חסר ושואל שאלות הבהרה ללא המצאת נתונים'
-              : 'The engine parses constraints, identifies missing info, and asks focused questions'}
+              ? 'חיפוש מותאם אישית לפי הזמנים וההעדפות שלך'
+              : 'Personalized search based on your dates and preferences'}
           </div>
 
           <button
             type="button"
             onClick={() => handleAnalyze()}
-            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-800 hover:bg-amber-900 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full sm:w-auto px-7 py-3 rounded-xl bg-amber-800 hover:bg-amber-900 text-white font-bold text-sm shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
           >
             <Sparkles className="w-4 h-4" />
-            <span>{language === 'he' ? 'פיענוח הבקשה ובדיקת אילוצים' : 'Parse Request & Evaluate'}</span>
+            <span>{language === 'he' ? 'חיפוש חוויות' : 'Find Experiences'}</span>
           </button>
         </div>
       </div>
@@ -310,7 +284,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-sm text-stone-900">
-                    {language === 'he' ? 'סטטוס הבקשה:' : 'Request Status:'}
+                    {language === 'he' ? 'מצב הבקשה:' : 'Status:'}
                   </span>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
@@ -327,11 +301,11 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                 <p className="text-xs text-stone-500 mt-0.5">
                   {parsedResult.status === 'no_source_connected'
                     ? (language === 'he'
-                        ? 'מקורות מידע חיצוניים (כרטיסים/הזמנת שולחן) אינם מחוברים כרגע — לא נציג מידע מומצא כעובדה'
-                        : 'External booking/ticketing APIs not connected — No fake availability presented')
+                        ? 'חיבור לשירותי הזמנת מקומות וכרטיסים אינו מופעל כרגע — מוצגות הצעות ללא התחייבות על זמינות'
+                        : 'External booking/ticketing not connected — Suggestions shown without live availability guarantee')
                     : (language === 'he'
-                        ? 'המערכת מזהה את מה שידוע בוודאות מול מה שחסר להמשך'
-                        : 'System delineates confirmed knowledge vs missing essentials')}
+                        ? 'זיהינו את הפרטים המרכזיים מתוך הבקשה שלך'
+                        : 'We identified the core details from your request')}
                 </p>
               </div>
             </div>
@@ -347,9 +321,9 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                     tripType: parsedResult.audienceType === 'couple' ? 'couple' : 'friends',
                   })
                 }
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold transition-all cursor-pointer self-start sm:self-center"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold transition-all cursor-pointer self-start sm:self-center shadow-xs"
               >
-                <span>{language === 'he' ? 'העבר לאשף הטיולים המלא' : 'Transfer to Trip Wizard'}</span>
+                <span>{language === 'he' ? 'העבר לתכנון טיול מלא' : 'Transfer to Trip Planner'}</span>
                 <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
               </button>
             ) : null}
@@ -359,7 +333,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
           {Object.keys(clarifiedOverrides).length > 0 && (
             <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200 flex flex-wrap items-center gap-2 text-xs">
               <span className="font-bold text-amber-900">
-                {language === 'he' ? 'תשובות הבהרה שהזנת:' : 'Clarifications provided:'}
+                {language === 'he' ? 'דגשים שהוספת:' : 'Details provided:'}
               </span>
               {Object.entries(clarifiedOverrides).map(([field, val]) => (
                 <span
@@ -393,24 +367,24 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                 onClick={handleResetClarifications}
                 className="text-[11px] text-amber-800 hover:text-amber-950 underline cursor-pointer mr-auto rtl:mr-0 rtl:ml-auto"
               >
-                {language === 'he' ? 'איפוס כל התשובות' : 'Reset all'}
+                {language === 'he' ? 'איפוס כל הדגשים' : 'Reset all'}
               </button>
             </div>
           )}
 
-          {/* SMART CLARIFICATION QUESTION (Task 4) */}
+          {/* FOCUSED CLARIFICATION QUESTION */}
           {parsedResult.clarificationQuestions.length > 0 && (
             <div className="p-5 rounded-2xl bg-amber-50/80 border border-amber-300 space-y-4">
               <div className="flex items-center gap-2">
                 <HelpCircle className="w-5 h-5 text-amber-800 shrink-0" />
                 <div>
                   <h3 className="font-bold text-sm text-amber-950">
-                    {language === 'he' ? 'שאלת הבהרה שיחתית:' : 'Conversational Clarification:'}
+                    {language === 'he' ? 'כדי שנוכל להתאים עבורך את החוויה:' : 'To help tailor your experience:'}
                   </h3>
                   <p className="text-xs text-amber-900">
                     {language === 'he'
-                      ? 'במקום להציג הצעות מומצאות, המערכת מבררת רק את הפרט החשוב ביותר שחסר.'
-                      : 'Rather than fabricating suggestions, the engine asks only the single missing essential.'}
+                      ? 'נשמח לדעת עוד פרט קטן שיעזור לנו לדייק את ההמלצה.'
+                      : 'A quick question to help us fine-tune the recommendation.'}
                   </p>
                 </div>
               </div>
@@ -467,7 +441,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                         className="px-3.5 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs active:scale-95"
                       >
                         <Send className="w-3 h-3 rtl:rotate-180" />
-                        <span>{language === 'he' ? 'הזן' : 'Submit'}</span>
+                        <span>{language === 'he' ? 'שליחה' : 'Send'}</span>
                       </button>
                     </div>
                   )}
@@ -476,22 +450,22 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
             </div>
           )}
 
-          {/* EXTRACTED FACTS & PROVENANCE (Task 2) */}
+          {/* EXTRACTED FACTS */}
           <div className="space-y-3">
             <h3 className="font-bold text-xs sm:text-sm text-stone-900 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-700" />
               <span>
                 {language === 'he'
-                  ? 'מידע מובנה שחולץ (עם רמת ודאות ומקור מידע שקוף):'
-                  : 'Structured Extracted Facts (Transparent Certainty & Provenance):'}
+                  ? 'פרטים מתוך הבקשה:'
+                  : 'Details from your request:'}
               </span>
             </h3>
 
             {parsedResult.extractedFacts.length === 0 ? (
               <div className="p-4 rounded-xl border border-dashed border-stone-200 text-xs text-stone-500">
                 {language === 'he'
-                  ? 'לא נמסרו פרטים מזוהים. המערכת אינה ממלאת פרטים ללא אישורך.'
-                  : 'No verified details provided yet. The system never invents details without confirmation.'}
+                  ? 'לא צוינו פרטים ספציפיים. תוכל להוסיף עוד מידע בתיבת החיפוש.'
+                  : 'No specific details provided yet. You can add more in the search box.'}
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -517,14 +491,14 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                             ? 'bg-emerald-100 text-emerald-800'
                             : fact.certainty === 'profile_confirmed'
                             ? 'bg-blue-100 text-blue-800'
-                            : 'bg-amber-100 text-amber-800'
+                            : 'bg-stone-100 text-stone-700'
                         }`}
                       >
                         {fact.certainty === 'explicit'
-                          ? (language === 'he' ? 'נמסר במפורש' : 'Explicit')
+                          ? (language === 'he' ? 'מתוך הבקשה' : 'From Request')
                           : fact.certainty === 'profile_confirmed'
-                          ? (language === 'he' ? 'מפרופיל מאושר' : 'Profile')
-                          : (language === 'he' ? 'הסקה זמנית' : 'Inferred')}
+                          ? (language === 'he' ? 'מהפרופיל שלך' : 'From Profile')
+                          : (language === 'he' ? 'הערכה' : 'Estimated')}
                       </span>
                     </div>
                   </div>
@@ -533,14 +507,14 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
             )}
           </div>
 
-          {/* ACTIVE CONSTRAINTS & ALTERNATIVE TIME WINDOWS (Task 3) */}
+          {/* DATES & PREFERENCES */}
           <div className="space-y-3 pt-2">
             <h3 className="font-bold text-xs sm:text-sm text-stone-900 flex items-center gap-1.5">
               <SlidersHorizontal className="w-4 h-4 text-amber-800" />
               <span>
                 {language === 'he'
-                  ? 'אילוצים קשיחים, העדפות גמישות וחלונות זמן:'
-                  : 'Hard Constraints, Soft Preferences & Time Windows:'}
+                  ? 'דגשים, מועדים וזמנים לפעילות:'
+                  : 'Dates, times & key preferences:'}
               </span>
             </h3>
 
@@ -548,7 +522,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
             {parsedResult.timeWindows.length > 0 && (
               <div className="p-3.5 rounded-xl border border-stone-200 bg-white space-y-2">
                 <span className="text-xs font-bold text-stone-700 block">
-                  {language === 'he' ? 'חלונות זמן חלופיים שזוהו:' : 'Identified Time Windows:'}
+                  {language === 'he' ? 'מועדים וזמנים שנבחרו:' : 'Dates & time windows:'}
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {parsedResult.timeWindows.map((win) => (
@@ -590,8 +564,8 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                       }`}
                     >
                       {c.isHardConstraint
-                        ? (language === 'he' ? 'אילוץ קשיח מחייב' : 'Hard Constraint')
-                        : (language === 'he' ? 'העדפה גמישה' : 'Soft Preference')}
+                        ? (language === 'he' ? 'דגש מחייב' : 'Required')
+                        : (language === 'he' ? 'העדפה גמישה' : 'Flexible Preference')}
                     </span>
                   </div>
                 ))}
@@ -599,8 +573,8 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
             ) : (
               <div className="text-xs text-stone-500 italic">
                 {language === 'he'
-                  ? 'לא זוהו אילוצים קשיחים מיוחדים בבקשה.'
-                  : 'No specific hard constraints detected in request.'}
+                  ? 'לא צוינו דגשים מחייבים מיוחדים בבקשה.'
+                  : 'No specific mandatory requirements in this request.'}
               </div>
             )}
           </div>
@@ -611,8 +585,8 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
               <MapPin className="w-4 h-4 text-amber-800" />
               <span>
                 {language === 'he'
-                  ? 'הקשר גיאוגרפי ותחבורה (אין הנחה אוטומטית שדרושה טיסה):'
-                  : 'Geographic Context & Transport (Zero automatic flight assumptions):'}
+                  ? 'מיקום ואמצעי הגעה:'
+                  : 'Location & travel:'}
               </span>
             </h3>
 
@@ -660,19 +634,19 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
             </div>
           </div>
 
-          {/* CONCEPTUAL IDEAS & EXTERNAL SOURCE NOTICE (Task 5) */}
+          {/* CONCEPTUAL IDEAS & SUGGESTIONS */}
           <div className="space-y-3 pt-3 border-t border-stone-200">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-xs sm:text-sm text-stone-900 flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-amber-800" />
                 <span>
                   {language === 'he'
-                    ? 'רעיונות להשראה (הפרדה ברורה מתוצאות מאומתות):'
-                    : 'Conceptual Inspirations (Clearly separated from verified results):'}
+                    ? 'רעיונות והצעות לפעילות:'
+                    : 'Ideas & Suggestions:'}
                 </span>
               </h3>
               <span className="text-[11px] text-stone-500">
-                {language === 'he' ? 'מקורות חיצוניים אינם מחוברים' : 'External APIs not connected'}
+                {language === 'he' ? 'הצעות ראשוניות להשראה' : 'Initial ideas for inspiration'}
               </span>
             </div>
 
@@ -691,7 +665,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
 
                   <p className="text-xs text-stone-600 leading-relaxed">{idea.descriptionHe}</p>
 
-                  <div className="text-[11px] font-bold text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                  <div className="text-[11px] font-medium text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200">
                     {idea.disclaimerHe}
                   </div>
                 </div>

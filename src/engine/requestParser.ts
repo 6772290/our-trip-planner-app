@@ -292,32 +292,52 @@ export function parseExperienceRequest(
     });
   }
 
-  // Record verified profile locations if present (NEVER invented if absent!)
+  // Record profile locations if present (NEVER invented if absent!)
+  // If profile is in Demo Mode, clearly mark as unverified demo illustration facts
   if (permanentHome) {
+    const isDemo = !!profile?.isDemo;
     extractedFacts.push({
       id: 'f_home',
       key: 'home',
-      labelHe: 'מגורים קבועים',
-      labelEn: 'Permanent Home',
+      labelHe: isDemo ? 'מגורים קבועים (נתוני הדגמה בלבד)' : 'מגורים קבועים',
+      labelEn: isDemo ? 'Permanent Home (Demo Data Only)' : 'Permanent Home',
       value: permanentHome,
-      certainty: 'profile_confirmed',
-      sourceNoteHe: 'נלקח מהפרופיל המאושר שלך',
-      sourceNoteEn: 'Taken from your verified profile',
-      isConfirmed: true,
+      certainty: isDemo ? 'inferred_provisional' : 'profile_confirmed',
+      sourceNoteHe: isDemo
+        ? 'נתוני הדגמה להמחשה בלבד — לא אושר על ידך'
+        : 'נלקח מהפרופיל המאושר שלך',
+      sourceNoteEn: isDemo
+        ? 'Demo data for illustration only — not confirmed by user'
+        : 'Taken from your verified profile',
+      isConfirmed: !isDemo,
     });
   }
 
   if (departureLocation) {
+    const isFromClarification = !!overrides.departureLocation;
+    const isDemo = !isFromClarification && !!profile?.isDemo;
     extractedFacts.push({
       id: 'f_dep',
       key: 'departure',
-      labelHe: 'נקודת יציאה לפעילות',
-      labelEn: 'Activity Departure',
+      labelHe: isDemo ? 'נקודת יציאה לפעילות (נתוני הדגמה בלבד)' : 'נקודת יציאה לפעילות',
+      labelEn: isDemo ? 'Activity Departure (Demo Data Only)' : 'Activity Departure',
       value: departureLocation,
-      certainty: overrides.departureLocation ? 'explicit' : 'profile_confirmed',
-      sourceNoteHe: overrides.departureLocation ? 'נמסר במענה להבהרה' : 'נלקח מנקודת המוצא השגרתית בפרופיל',
-      sourceNoteEn: 'From clarification response or profile',
-      isConfirmed: true,
+      certainty: isFromClarification
+        ? 'explicit'
+        : isDemo
+        ? 'inferred_provisional'
+        : 'profile_confirmed',
+      sourceNoteHe: isFromClarification
+        ? 'נמסר במענה להבהרה'
+        : isDemo
+        ? 'נתוני הדגמה להמחשה בלבד — לא אושר על ידך'
+        : 'נלקח מנקודת המוצא השגרתית בפרופיל',
+      sourceNoteEn: isFromClarification
+        ? 'From clarification response'
+        : isDemo
+        ? 'Demo data for illustration only — not confirmed by user'
+        : 'From profile departure location',
+      isConfirmed: isFromClarification || !isDemo,
     });
   }
 

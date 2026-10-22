@@ -18,6 +18,21 @@ export function createEmptyUserProfile(): UserProfile {
 }
 
 /**
+ * Determines whether a profile is definitively demo data rather than a user's real saved profile.
+ */
+export function isDefiniteDemoProfile(profile: any): boolean {
+  if (!profile || typeof profile !== 'object') return false;
+  return (
+    profile.isDemo === true ||
+    profile.id === 'demo_user_dan' ||
+    profile.fullName === 'דן כהן (פרופיל הדגמה)' ||
+    (typeof profile.fullName === 'string' &&
+      profile.fullName.includes('דן כהן') &&
+      profile.defaultActivityDepartureLocation?.includes('רמת החייל'))
+  );
+}
+
+/**
  * Isolated DEMO dataset.
  * Used exclusively when the user explicitly clicks "Load Demo Data"
  * to explore the application capabilities.

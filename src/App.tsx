@@ -6,6 +6,7 @@ import {
   DEMO_PROFILE,
   DEMO_CONTACTS,
   DEMO_SAVED_GROUPS,
+  isDefiniteDemoProfile,
 } from './data/demoProfiles';
 import { INITIAL_DEMO_TRIPS } from './data/demoTrips';
 import { Header, NavViewType } from './components/Header';
@@ -15,7 +16,7 @@ import { CreateTripScreen } from './components/CreateTripScreen';
 import { QuestionnaireScreen } from './components/QuestionnaireScreen';
 import { SummaryRecommendationsScreen } from './components/SummaryRecommendationsScreen';
 import { ExperiencePortalScreen } from './components/ExperiencePortalScreen';
-import { ProfileAndPrivacyModal } from './components/ProfileAndPrivacyModal';
+import { ProfileAndPrivacyModal, AccountModalTab } from './components/ProfileAndPrivacyModal';
 import { InfoModal } from './components/InfoModal';
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
 
@@ -24,6 +25,8 @@ type AppView = 'experiences' | 'welcome' | 'home' | 'create_trip' | 'questionnai
 const STORAGE_KEY = 'our_trip_applet_state_v1';
 const PROFILE_STORAGE_KEY = 'our_trip_profile_v1';
 const CONTACTS_STORAGE_KEY = 'our_trip_contacts_v1';
+const GROUPS_STORAGE_KEY = 'our_trip_groups_v1';
+const DEMO_EXPLICIT_KEY = 'our_trip_demo_explicit_active_v1';
 
 function AppContent() {
   const { language, t } = useLanguage();
@@ -43,11 +46,27 @@ function AppContent() {
     return INITIAL_DEMO_TRIPS;
   });
 
-  // A brand new user starts with an EMPTY profile. Zero invented facts.
+  // A brand new user starts automatically with an EMPTY personal profile. Zero invented facts.
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     try {
+      const isExplicitDemo = localStorage.getItem(DEMO_EXPLICIT_KEY) === 'true';
       const saved = localStorage.getItem(PROFILE_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          // If stored data is identified as old demo data and user hasn't explicitly activated demo mode:
+          if (isDefiniteDemoProfile(parsed)) {
+            if (isExplicitDemo) {
+              parsed.isDemo = true;
+              return parsed;
+            }
+            // Isolate and ignore old demo data lingering from previous builds - start clean
+            return createEmptyUserProfile();
+          }
+          // Real user profile with authentic user preferences
+          return parsed;
+        }
+      }
     } catch {
       // fallback
     }
@@ -66,13 +85,22 @@ function AppContent() {
   });
 
   // Groups start empty for new user
-  const [savedGroups, setSavedGroups] = useState<SavedGroup[]>([]);
+  const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(() => {
+    try {
+      const saved = localStorage.getItem(GROUPS_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // fallback
+    }
+    return [];
+  });
 
   const [currentView, setCurrentView] = useState<AppView>('experiences');
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [activeParticipantId, setActiveParticipantId] = useState<string | null>(null);
   const [modalType, setModalType] = useState<'how_it_works' | 'faq' | null>(null);
   const [isPrivacyCenterOpen, setIsPrivacyCenterOpen] = useState(false);
+  const [accountModalTab, setAccountModalTab] = useState<AccountModalTab>('profile');
 
   // Pre-fill data for trip wizard when originating from experience portal
   const [tripWizardInitialData, setTripWizardInitialData] = useState<{
@@ -105,6 +133,14 @@ function AppContent() {
       // ignore
     }
   }, [contacts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(savedGroups));
+    } catch {
+      // ignore
+    }
+  }, [savedGroups]);
 
   // Ensure scroll position resets to top on every screen transition
   useEffect(() => {
@@ -168,17 +204,35 @@ function AppContent() {
     }
   };
 
-  // Demo mode switchers (Task 1)
+  // Demo mode switchers with explicit user confirmation and instant localStorage sync
   const handleLoadDemoData = () => {
     setUserProfile(DEMO_PROFILE);
     setContacts(DEMO_CONTACTS);
     setSavedGroups(DEMO_SAVED_GROUPS);
+    try {
+      localStorage.setItem(DEMO_EXPLICIT_KEY, 'true');
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(DEMO_PROFILE));
+      localStorage.setItem(CONTACTS_STORAGE_KEY, JSON.stringify(DEMO_CONTACTS));
+      localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(DEMO_SAVED_GROUPS));
+    } catch (e) {
+      console.warn('Could not save demo data to localStorage', e);
+    }
   };
 
   const handleResetToEmptyProfile = () => {
-    setUserProfile(createEmptyUserProfile());
+    const cleanProfile = createEmptyUserProfile();
+    setUserProfile(cleanProfile);
     setContacts([]);
     setSavedGroups([]);
+
+    try {
+      localStorage.removeItem(DEMO_EXPLICIT_KEY);
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(cleanProfile));
+      localStorage.setItem(CONTACTS_STORAGE_KEY, JSON.stringify([]));
+      localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify([]));
+    } catch (e) {
+      console.warn('Could not reset localStorage profile keys', e);
+    }
   };
 
   const handleQuestionnaireComplete = (answers: ParticipantAnswers) => {
@@ -250,7 +304,11 @@ function AppContent() {
             setCurrentView(view);
           }
         }}
-        onOpenPrivacyCenter={() => setIsPrivacyCenterOpen(true)}
+        userProfile={userProfile}
+        onOpenAccountSection={(tab) => {
+          setAccountModalTab(tab);
+          setIsPrivacyCenterOpen(true);
+        }}
         onOpenHowItWorks={() => setModalType('how_it_works')}
         onOpenFaq={() => setModalType('faq')}
       />
@@ -360,6 +418,7 @@ function AppContent() {
         onClose={() => setIsPrivacyCenterOpen(false)}
         userProfile={userProfile}
         contacts={contacts}
+        initialTab={accountModalTab}
         onUpdateProfile={setUserProfile}
         onUpdateContacts={setContacts}
         onLoadDemoData={handleLoadDemoData}

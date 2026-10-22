@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   UserProfile,
   ContactPerson,
@@ -26,14 +26,20 @@ import {
   Plus,
   Trash2,
   RefreshCw,
+  RotateCcw,
   AlertTriangle,
+  Settings,
+  Heart,
 } from 'lucide-react';
+
+export type AccountModalTab = 'profile' | 'preferences' | 'contacts' | 'privacy' | 'settings';
 
 interface ProfileAndPrivacyModalProps {
   isOpen: boolean;
   onClose: () => void;
   userProfile: UserProfile;
   contacts: ContactPerson[];
+  initialTab?: AccountModalTab;
   onUpdateProfile: (updated: UserProfile) => void;
   onUpdateContacts: (updated: ContactPerson[]) => void;
   onLoadDemoData: () => void;
@@ -45,13 +51,20 @@ export const ProfileAndPrivacyModal: React.FC<ProfileAndPrivacyModalProps> = ({
   onClose,
   userProfile,
   contacts,
+  initialTab = 'profile',
   onUpdateProfile,
   onUpdateContacts,
   onLoadDemoData,
   onResetToEmpty,
 }) => {
   const { language } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'profile' | 'provenance' | 'contacts' | 'decline'>('profile');
+  const [activeTab, setActiveTab] = useState<AccountModalTab>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
 
   // New preference form
   const [newPrefLabel, setNewPrefLabel] = useState('');
@@ -68,6 +81,7 @@ export const ProfileAndPrivacyModal: React.FC<ProfileAndPrivacyModalProps> = ({
   );
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('warm_direct');
   const [copied, setCopied] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   if (!isOpen) return null;
 
@@ -197,44 +211,55 @@ export const ProfileAndPrivacyModal: React.FC<ProfileAndPrivacyModalProps> = ({
             onClick={() => setActiveTab('profile')}
             className={`py-3 border-b-2 px-2 whitespace-nowrap cursor-pointer transition-colors ${
               activeTab === 'profile'
-                ? 'border-amber-800 text-amber-900'
+                ? 'border-amber-800 text-amber-900 font-bold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
-            {language === 'he' ? 'פרטי פרופיל ומיקומים' : 'Profile & Locations'}
+            {language === 'he' ? 'הפרופיל שלי' : 'My Profile'}
           </button>
 
           <button
-            onClick={() => setActiveTab('provenance')}
+            onClick={() => setActiveTab('preferences')}
             className={`py-3 border-b-2 px-2 whitespace-nowrap cursor-pointer transition-colors ${
-              activeTab === 'provenance'
-                ? 'border-amber-800 text-amber-900'
+              activeTab === 'preferences'
+                ? 'border-amber-800 text-amber-900 font-bold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
-            {language === 'he' ? 'העדפות ואימות מקור' : 'Preferences & Provenance'}
+            {language === 'he' ? 'ההעדפות שלי' : 'My Preferences'}
           </button>
 
           <button
             onClick={() => setActiveTab('contacts')}
             className={`py-3 border-b-2 px-2 whitespace-nowrap cursor-pointer transition-colors ${
               activeTab === 'contacts'
-                ? 'border-amber-800 text-amber-900'
+                ? 'border-amber-800 text-amber-900 font-bold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
-            {language === 'he' ? 'אנשי קשר ופרטיות' : 'Contacts & Social Privacy'}
+            {language === 'he' ? 'האנשים והקבוצות שלי' : 'My People & Groups'}
           </button>
 
           <button
-            onClick={() => setActiveTab('decline')}
+            onClick={() => setActiveTab('privacy')}
             className={`py-3 border-b-2 px-2 whitespace-nowrap cursor-pointer transition-colors ${
-              activeTab === 'decline'
-                ? 'border-amber-800 text-amber-900'
+              activeTab === 'privacy'
+                ? 'border-amber-800 text-amber-900 font-bold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
-            {language === 'he' ? 'מחולל סירוב מנומס' : 'Polite Decline Generator'}
+            {language === 'he' ? 'פרטיות ושיתוף' : 'Privacy & Sharing'}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`py-3 border-b-2 px-2 whitespace-nowrap cursor-pointer transition-colors ${
+              activeTab === 'settings'
+                ? 'border-amber-800 text-amber-900 font-bold'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            {language === 'he' ? 'הגדרות' : 'Settings'}
           </button>
         </div>
 
@@ -243,43 +268,6 @@ export const ProfileAndPrivacyModal: React.FC<ProfileAndPrivacyModalProps> = ({
           {/* TAB 1: Profile & Locations */}
           {activeTab === 'profile' && (
             <div className="space-y-5">
-              {/* Profile Mode Switcher Banner */}
-              <div className="p-4 rounded-2xl border border-stone-200 bg-stone-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <span className="font-bold text-stone-900 block text-xs">
-                    {language === 'he' ? 'מצב נתונים נוכחי:' : 'Current Data Mode:'}{' '}
-                    {userProfile.isDemo
-                      ? (language === 'he' ? 'נתוני הדגמה (דן כהן)' : 'Demo Profile (Dan Cohen)')
-                      : (language === 'he' ? 'פרופיל אישי נקי' : 'Clean Personal Profile')}
-                  </span>
-                  <p className="text-[11px] text-stone-500">
-                    {language === 'he'
-                      ? 'ניתן לעבור בין פרופיל אישי נקי ללא פרטים מומצאים, לבין נתוני הדגמה להמחשה.'
-                      : 'Switch between an empty personal profile with zero assumptions, and demo data for illustration.'}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {userProfile.isDemo ? (
-                    <button
-                      type="button"
-                      onClick={onResetToEmpty}
-                      className="px-3 py-1.5 rounded-xl bg-stone-800 text-white text-xs font-bold hover:bg-stone-900 cursor-pointer transition-colors shadow-xs"
-                    >
-                      {language === 'he' ? 'איפוס לפרופיל נקי' : 'Reset to Clean Profile'}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={onLoadDemoData}
-                      className="px-3 py-1.5 rounded-xl bg-amber-800 text-white text-xs font-bold hover:bg-amber-900 cursor-pointer transition-colors shadow-xs"
-                    >
-                      {language === 'he' ? 'טען נתוני הדגמה' : 'Load Demo Data'}
-                    </button>
-                  )}
-                </div>
-              </div>
-
               {/* Personal Details */}
               <div className="space-y-3 p-4 rounded-2xl border border-stone-200 bg-white shadow-xs">
                 <h3 className="font-bold text-stone-900 text-xs sm:text-sm flex items-center gap-1.5">
@@ -355,8 +343,8 @@ export const ProfileAndPrivacyModal: React.FC<ProfileAndPrivacyModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: Preferences & Provenance */}
-          {activeTab === 'provenance' && (
+          {/* TAB 2: Preferences */}
+          {activeTab === 'preferences' && (
             <div className="space-y-5">
               {/* Add New Preference Form */}
               <form
@@ -600,79 +588,239 @@ export const ProfileAndPrivacyModal: React.FC<ProfileAndPrivacyModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: Polite Decline Generator */}
-          {activeTab === 'decline' && (
-            <div className="space-y-5">
-              <div className="bg-stone-100 border border-stone-200 rounded-2xl p-4 space-y-1.5">
+          {/* TAB 4: Privacy & Sharing */}
+          {activeTab === 'privacy' && (
+            <div className="space-y-6">
+              {/* Privacy principles banner */}
+              <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
                 <div className="flex items-center gap-2 font-bold text-stone-900">
-                  <ShieldCheck className="w-4 h-4 text-amber-800" />
+                  <ShieldCheck className="w-5 h-5 text-amber-800" />
                   <span>
                     {language === 'he'
-                      ? 'סירוב מנומס, מכבד וניטרלי — ללא תירוצי יומן מדומים'
-                      : 'Polite, respectful decline — zero fake calendar excuses'}
+                      ? 'עקרונות פרטיות והפרדה מלאה בין חברי קבוצה'
+                      : 'Privacy Principles & Strict Separation'}
+                  </span>
+                </div>
+                <ul className="text-xs text-stone-600 space-y-1.5 list-disc list-inside leading-relaxed">
+                  <li>
+                    {language === 'he'
+                      ? 'הערות פרטיות, תקציב וסירובים אינם נחשפים לאף אדם אחר, גם לא בתוך אותה קבוצה.'
+                      : 'Private notes, individual budgets, and declines are never shared with others, even within the same group.'}
+                  </li>
+                  <li>
+                    {language === 'he'
+                      ? 'העדפות אישיות שמוגדרות כ"פרטיות" משמשות רק את מנוע החיפוש האישי שלך.'
+                      : 'Preferences marked as private are only used for your individual experience recommendations.'}
+                  </li>
+                  <li>
+                    {language === 'he'
+                      ? 'אין מעקב מיקום רציף ואין סנכרון חיצוני ללא הסכמה מפורשת.'
+                      : 'No continuous location tracking or external sync without explicit consent.'}
+                  </li>
+                </ul>
+              </div>
+
+              {/* Polite decline tool */}
+              <div className="border border-stone-200 rounded-2xl p-4 space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-xs sm:text-sm font-bold text-stone-900 flex items-center gap-2">
+                    <BellOff className="w-4 h-4 text-amber-800" />
+                    <span>
+                      {language === 'he'
+                        ? 'כלי לסירוב מנומס, מכבד וניטרלי'
+                        : 'Polite, Respectful Decline Generator'}
+                    </span>
+                  </h4>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    {language === 'he'
+                      ? 'כאשר אינך מעוניין להשתתף בפעילות, אין צורך להמציא תירוצים כוזבים. בחר ניסוח אותנטי, נעים ומכבד:'
+                      : 'When you prefer not to participate, no fake excuses are needed. Choose an authentic, gracious phrasing:'}
+                  </p>
+                </div>
+
+                {/* Contact name input & style picker */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-stone-700">
+                      {language === 'he' ? 'שם איש הקשר (אופציונלי):' : 'Contact Name (Optional):'}
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedContactForDecline}
+                      onChange={(e) => setSelectedContactForDecline(e.target.value)}
+                      placeholder={language === 'he' ? 'לדוגמה: יוני' : 'e.g. Alex'}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs sm:text-sm bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-stone-700">
+                      {language === 'he' ? 'בחר סגנון מענה:' : 'Select response tone:'}
+                    </label>
+                    <select
+                      value={selectedTemplateId}
+                      onChange={(e) => setSelectedTemplateId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs sm:text-sm bg-white"
+                    >
+                      {POLITE_DECLINE_TEMPLATES.map((tmpl) => (
+                        <option key={tmpl.id} value={tmpl.id}>
+                          {language === 'he' ? tmpl.titleHe : tmpl.titleEn}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Generated message preview */}
+                <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs font-bold text-amber-900">
+                    <span>{language === 'he' ? 'הודעה מוכנה להעתקה:' : 'Message Ready to Copy:'}</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyDeclineMessage}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-800 text-white font-bold hover:bg-amber-900 cursor-pointer transition-colors shadow-xs"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copied ? (language === 'he' ? 'הועתק!' : 'Copied!') : (language === 'he' ? 'העתק טקסט' : 'Copy Text')}</span>
+                    </button>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-stone-200 text-xs sm:text-sm text-stone-800 font-medium whitespace-pre-wrap leading-relaxed">
+                    {getCustomizedDeclineMessage(
+                      selectedTemplateId,
+                      selectedContactForDecline,
+                      language === 'en' ? 'en' : 'he'
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: Settings */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              {/* Storage explanation banner */}
+              <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-stone-900">
+                  <Lock className="w-4 h-4 text-amber-800" />
+                  <span>
+                    {language === 'he'
+                      ? 'אחסון מקומי ופרטיות נתונים'
+                      : 'Local Storage & Data Privacy'}
                   </span>
                 </div>
                 <p className="text-xs text-stone-600 leading-relaxed">
                   {language === 'he'
-                    ? 'כאשר אינך מעוניין לקחת חלק בהזמנה או באירוע, אין צורך להמציא תירוצים כוזבים על פגישות או טיפולים. להלן ניסוחים אותנטיים, נעימים ומכבדים.'
-                    : 'When you prefer not to participate, there is no need to fabricate fake meetings or dentist appointments. Here are courteous, honest, and gracious response templates.'}
+                    ? 'כל המידע האישי שלך — שם, מקום מגורים, העדפות, אנשי קשר וקבוצות — נשמר אך ורק באחסון המקומי של דפדפן זה (Local Storage). שום מידע אישי אינו נשלח לשרת חיצוני, אין שירותי ענן מדומים ואין צורך בשום סיסמה או חשבון מקוון.'
+                    : 'All your personal profile data — name, home base, preferences, contacts, and groups — is stored strictly inside this browser (Local Storage). No personal data is sent to external servers, there are no fake cloud accounts, and no online passwords are needed.'}
                 </p>
               </div>
 
-              {/* Contact name input */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">
-                    {language === 'he' ? 'שם איש הקשר (אופציונלי):' : 'Contact Name (Optional):'}
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedContactForDecline}
-                    onChange={(e) => setSelectedContactForDecline(e.target.value)}
-                    placeholder={language === 'he' ? 'לדוגמה: יוני' : 'e.g. Alex'}
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs sm:text-sm bg-white"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">
-                    {language === 'he' ? 'בחר סגנון מענה:' : 'Select response tone:'}
-                  </label>
-                  <select
-                    value={selectedTemplateId}
-                    onChange={(e) => setSelectedTemplateId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 text-xs sm:text-sm bg-white"
-                  >
-                    {POLITE_DECLINE_TEMPLATES.map((tmpl) => (
-                      <option key={tmpl.id} value={tmpl.id}>
-                        {language === 'he' ? tmpl.titleHe : tmpl.titleEn}
-                      </option>
-                    ))}
-                  </select>
+              {/* Current Profile Status */}
+              <div className="border border-stone-200 rounded-2xl p-4 space-y-2">
+                <h4 className="text-xs font-bold text-stone-700">
+                  {language === 'he' ? 'סטטוס הפרופיל הפעיל:' : 'Active Profile Status:'}
+                </h4>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {userProfile.isDemo ? (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        {language === 'he' ? 'מצב הדגמה פעיל (דן כהן)' : 'Demo Profile Active'}
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                        {language === 'he' ? 'פרופיל אישי נקי' : 'Personal Clean Profile'}
+                      </span>
+                    )}
+                    <span className="text-xs text-stone-500">
+                      {userProfile.preferences.length}{' '}
+                      {language === 'he' ? 'העדפות שמורות' : 'saved preferences'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Generated message preview */}
-              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/80 space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-amber-900">
-                  <span>{language === 'he' ? 'הודעה מוכנה לשליחה:' : 'Ready-to-send Message:'}</span>
+              {/* Demo Mode / Data Exploration */}
+              <div className="border border-stone-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-stone-900">
+                      {language === 'he' ? 'נתוני הדגמה לבדיקה' : 'Demo Data for Exploration'}
+                    </h4>
+                    <p className="text-xs text-stone-500">
+                      {language === 'he'
+                        ? 'טעינת פרופיל לדוגמה עם תחומי עניין מוכנים (דן ומיכל, תל אביב) לצורך התנסות במערכת.'
+                        : 'Load a sample profile with preset interests (Dan & Michal) to explore platform features.'}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={handleCopyDeclineMessage}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-800 text-white font-bold hover:bg-amber-900 cursor-pointer transition-colors shadow-xs"
+                    onClick={() => {
+                      onLoadDemoData();
+                      setShowResetConfirm(false);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl border border-stone-300 text-stone-700 text-xs font-bold hover:bg-stone-100 cursor-pointer transition-colors whitespace-nowrap shrink-0"
                   >
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copied ? (language === 'he' ? 'הועתק!' : 'Copied!') : (language === 'he' ? 'העתק טקסט' : 'Copy Text')}</span>
+                    {language === 'he' ? 'טעינת נתוני הדגמה' : 'Load Demo Data'}
                   </button>
                 </div>
+              </div>
 
-                <div className="p-3 bg-white rounded-xl border border-stone-200 text-sm text-stone-800 font-medium whitespace-pre-wrap leading-relaxed shadow-inner">
-                  {getCustomizedDeclineMessage(
-                    selectedTemplateId,
-                    selectedContactForDecline,
-                    language === 'en' ? 'en' : 'he'
-                  )}
+              {/* Data Reset Section with Confirmation */}
+              <div className="border border-red-200 bg-red-50/40 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-red-900 font-bold text-xs sm:text-sm">
+                  <AlertTriangle className="w-4 h-4 text-red-700 shrink-0" />
+                  <span>
+                    {language === 'he'
+                      ? 'מחיקת מידע אישי ואיפוס פרופיל'
+                      : 'Delete Personal Data & Reset Profile'}
+                  </span>
                 </div>
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  {language === 'he'
+                    ? 'פעולה זו תמחק את הפרופיל האישי, כל ההעדפות ואנשי הקשר שנשמרו בדפדפן זה, ותחזיר את המערכת לפרופיל נקי לחלוטין. טיולים שתוכננו במערכת תכנון הטיולים יישמרו.'
+                    : 'This action deletes your personal profile, all preferences and contacts saved in this browser, returning to a completely empty profile. Trips in the Trip Planner will be kept.'}
+                </p>
+
+                {showResetConfirm ? (
+                  <div className="p-3 bg-white rounded-xl border border-red-300 space-y-2.5">
+                    <p className="text-xs font-bold text-red-800">
+                      {language === 'he'
+                        ? 'האם אתה בטוח שברצונך לאפס את כל הנתונים האישיים ולהתחיל מחדש?'
+                        : 'Are you sure you want to reset all personal data and start fresh?'}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onResetToEmpty();
+                          setShowResetConfirm(false);
+                        }}
+                        className="px-4 py-1.5 rounded-lg bg-red-700 hover:bg-red-800 text-white font-bold text-xs cursor-pointer transition-colors shadow-xs"
+                      >
+                        {language === 'he' ? 'כן, אפס ומחק הכל' : 'Yes, Reset All'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowResetConfirm(false)}
+                        className="px-3 py-1.5 rounded-lg border border-stone-300 text-stone-700 font-medium text-xs hover:bg-stone-100 cursor-pointer transition-colors"
+                      >
+                        {language === 'he' ? 'ביטול' : 'Cancel'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowResetConfirm(true)}
+                      className="px-4 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white font-bold text-xs sm:text-sm cursor-pointer transition-colors shadow-xs"
+                    >
+                      {language === 'he' ? 'איפוס פרופיל ומחיקת נתונים' : 'Reset Profile & Delete Data'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
