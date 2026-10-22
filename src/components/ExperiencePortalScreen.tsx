@@ -40,6 +40,8 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Info,
+  X,
+  Send,
 } from 'lucide-react';
 
 interface ExperiencePortalScreenProps {
@@ -72,6 +74,7 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
   // Core natural text prompt
   const [inputText, setInputText] = useState('');
   const [clarifiedOverrides, setClarifiedOverrides] = useState<Record<string, any>>({});
+  const [freeTextClarification, setFreeTextClarification] = useState('');
   const [parsedResult, setParsedResult] = useState<ParsedRequestResult | null>(null);
 
   // Parse whenever input or overrides change
@@ -94,17 +97,32 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
   const handleApplyPreset = (presetText: string) => {
     setInputText(presetText);
     setClarifiedOverrides({});
+    setFreeTextClarification('');
     handleAnalyze(presetText, {});
   };
 
   const handleClarificationAnswer = (field: string, value: any) => {
     const newOverrides = { ...clarifiedOverrides, [field]: value };
     setClarifiedOverrides(newOverrides);
+    setFreeTextClarification('');
     handleAnalyze(inputText, newOverrides);
+  };
+
+  const handleRemoveClarificationAnswer = (field: string) => {
+    const newOverrides = { ...clarifiedOverrides };
+    delete newOverrides[field];
+    setClarifiedOverrides(newOverrides);
+    handleAnalyze(inputText, newOverrides);
+  };
+
+  const handleFreeTextSubmit = (field: string) => {
+    if (!freeTextClarification.trim()) return;
+    handleClarificationAnswer(field, freeTextClarification.trim());
   };
 
   const handleResetClarifications = () => {
     setClarifiedOverrides({});
+    setFreeTextClarification('');
     handleAnalyze(inputText, {});
   };
 
@@ -337,6 +355,49 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
             ) : null}
           </div>
 
+          {/* ACTIVE ANSWERED CLARIFICATIONS PILLS */}
+          {Object.keys(clarifiedOverrides).length > 0 && (
+            <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200 flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-bold text-amber-900">
+                {language === 'he' ? 'תשובות הבהרה שהזנת:' : 'Clarifications provided:'}
+              </span>
+              {Object.entries(clarifiedOverrides).map(([field, val]) => (
+                <span
+                  key={field}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-amber-300 text-stone-800 text-xs shadow-2xs"
+                >
+                  <span className="font-semibold text-amber-950">
+                    {field === 'experienceType'
+                      ? (language === 'he' ? 'סגנון' : 'Style')
+                      : field === 'departureLocation'
+                      ? (language === 'he' ? 'מוצא' : 'Departure')
+                      : field === 'culinaryVibe'
+                      ? (language === 'he' ? 'קולינריה' : 'Culinary')
+                      : field === 'tripScope'
+                      ? (language === 'he' ? 'היקף' : 'Scope')
+                      : field}:
+                  </span>
+                  <span>{String(val)}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveClarificationAnswer(field)}
+                    title={language === 'he' ? 'הסר תשובה זו בלבד' : 'Remove this answer only'}
+                    className="w-3.5 h-3.5 rounded-full hover:bg-stone-200 inline-flex items-center justify-center text-stone-500 hover:text-stone-800 cursor-pointer transition-colors"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={handleResetClarifications}
+                className="text-[11px] text-amber-800 hover:text-amber-950 underline cursor-pointer mr-auto rtl:mr-0 rtl:ml-auto"
+              >
+                {language === 'he' ? 'איפוס כל התשובות' : 'Reset all'}
+              </button>
+            </div>
+          )}
+
           {/* SMART CLARIFICATION QUESTION (Task 4) */}
           {parsedResult.clarificationQuestions.length > 0 && (
             <div className="p-5 rounded-2xl bg-amber-50/80 border border-amber-300 space-y-4">
@@ -379,6 +440,37 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
                       </button>
                     ))}
                   </div>
+
+                  {/* Free-text response input */}
+                  {q.allowFreeText !== false && (
+                    <div className="pt-2 border-t border-amber-200/60 flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder={
+                          language === 'he'
+                            ? 'או הקלידו תשובה משלכם (לדוגמה: רמת גן / מסעדה אסיאתית / יומיים)...'
+                            : 'Or type your own free-text answer...'
+                        }
+                        value={freeTextClarification}
+                        onChange={(e) => setFreeTextClarification(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleFreeTextSubmit(q.targetField);
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 text-xs rounded-xl border border-amber-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 text-stone-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleFreeTextSubmit(q.targetField)}
+                        className="px-3.5 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs active:scale-95"
+                      >
+                        <Send className="w-3 h-3 rtl:rotate-180" />
+                        <span>{language === 'he' ? 'הזן' : 'Submit'}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

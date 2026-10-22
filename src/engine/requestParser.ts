@@ -18,27 +18,20 @@ export interface ParseOptions {
   userProfile?: UserProfile;
   contacts?: ContactPerson[];
   savedGroups?: SavedGroup[];
-  clarifiedOverrides?: Partial<{
-    experienceType: string;
-    departureLocation: string;
-    destinationLocation: string;
-    culinaryVibe: string;
-    tripScope: string;
-    audience: ActivityAudience;
-  }>;
+  clarifiedOverrides?: Record<string, any>;
 }
 
 /**
  * Request Understanding Engine:
  * Analyzes natural language input, extracts facts with provenance and certainty,
- * evaluates constraints, identifies missing information, and asks smart clarification questions.
+ * evaluates constraints without fabricating durations or hard presence requirements,
+ * identifies missing information, and asks smart clarification questions across conversation turns.
  */
 export function parseExperienceRequest(
   inputText: string,
   options: ParseOptions = {}
 ): ParsedRequestResult {
   const text = (inputText || '').trim();
-  const lower = text.toLowerCase();
   const profile = options.userProfile;
   const contacts = options.contacts || [];
   const overrides = options.clarifiedOverrides || {};
@@ -90,12 +83,39 @@ export function parseExperienceRequest(
     audienceType = overrides.audience;
   }
 
-  // 2. Identify Experience Nature
+  // 2. Identify Experience Nature (with support for varied natural phrasings)
   let experienceType = overrides.experienceType || '';
   let isFood = false;
   let isMusic = false;
   let isTrip = false;
   let artistMentioned: string | undefined = undefined;
+
+  const isFoodPhrase =
+    text.includes('אוכל') ||
+    text.includes('מסעדה') ||
+    text.includes('ארוחה') ||
+    text.includes('יין') ||
+    text.includes('בא לי לאכול') ||
+    text.includes('רוצה לאכול') ||
+    text.includes('משהו טוב לאכול') ||
+    text.includes('קולינר');
+
+  const isMusicPhrase =
+    text.includes('אנדרה ריו') ||
+    text.includes('andre rieu') ||
+    text.includes('הופעה') ||
+    text.includes('קונצרט') ||
+    text.includes('מוזיקה');
+
+  const isTripPhrase =
+    text.includes('חופשה') ||
+    text.includes('טיול') ||
+    text.includes('ימים לחופשה') ||
+    text.includes('סופשבוע') ||
+    text.includes('סופ״ש') ||
+    text.includes('בחו״ל') ||
+    text.includes('לחו״ל') ||
+    text.includes('שבוע פנוי');
 
   if (text.includes('אנדרה ריו') || text.includes('andre rieu')) {
     artistMentioned = 'אנדרה ריו (André Rieu)';
@@ -112,9 +132,9 @@ export function parseExperienceRequest(
       sourceNoteEn: 'Explicitly stated in prompt',
       isConfirmed: true,
     });
-  } else if (text.includes('אוכל') || text.includes('מסעדה') || text.includes('ארוחה') || text.includes('יין')) {
+  } else if (isFoodPhrase) {
     isFood = true;
-    experienceType = 'קולינריה / מסעדה';
+    experienceType = 'קולינריה ומסעדות';
     extractedFacts.push({
       id: 'f_category',
       key: 'category',
@@ -122,13 +142,27 @@ export function parseExperienceRequest(
       labelEn: 'Category',
       value: 'קולינריה ומסעדות',
       certainty: 'explicit',
-      sourceNoteHe: 'נמסר במפורש בטקסט',
-      sourceNoteEn: 'Explicitly stated in prompt',
+      sourceNoteHe: 'זוהה מתוך ביטוי קולינרי בטקסט (היוריסטיקה שקופה)',
+      sourceNoteEn: 'Identified via culinary phrase (rule extraction)',
       isConfirmed: true,
     });
-  } else if (text.includes('חופשה') || text.includes('טיול') || text.includes('ימים לחופשה') || text.includes('סופשבוע')) {
+  } else if (isMusicPhrase) {
+    isMusic = true;
+    experienceType = 'מוזיקה והופעה חיה';
+    extractedFacts.push({
+      id: 'f_category',
+      key: 'category',
+      labelHe: 'סוג בילוי',
+      labelEn: 'Category',
+      value: 'מוזיקה והופעה חיה',
+      certainty: 'explicit',
+      sourceNoteHe: 'זוהה מתוך אזכור מוזיקלי בטקסט',
+      sourceNoteEn: 'Identified from music mention in text',
+      isConfirmed: true,
+    });
+  } else if (isTripPhrase) {
     isTrip = true;
-    experienceType = 'חופשה / טיול';
+    experienceType = 'חופשה וטיולים';
     extractedFacts.push({
       id: 'f_category',
       key: 'category',
@@ -136,21 +170,36 @@ export function parseExperienceRequest(
       labelEn: 'Category',
       value: 'חופשה וטיולים',
       certainty: 'explicit',
-      sourceNoteHe: 'נמסר במפורש בטקסט',
-      sourceNoteEn: 'Explicitly stated in prompt',
+      sourceNoteHe: 'זוהה מתוך תיאור חופשה/טיול בטקסט',
+      sourceNoteEn: 'Identified from vacation/trip keywords',
       isConfirmed: true,
     });
   }
 
-  // If user applied clarification override for experienceType
-  if (overrides.experienceType === 'food') {
-    isFood = true;
-    experienceType = 'קולינריה ומסעדה';
-  } else if (overrides.experienceType === 'music') {
-    isMusic = true;
-    experienceType = 'מוזיקה והופעה חיה';
-  } else if (overrides.experienceType === 'stroll') {
-    experienceType = 'טיול קצר ואווירה נעימה';
+  // Handle clarification override for experienceType
+  if (overrides.experienceType) {
+    if (overrides.experienceType === 'food' || overrides.experienceType === 'אוכל ומסעדה טובה') {
+      isFood = true;
+      experienceType = 'קולינריה ומסעדה';
+    } else if (overrides.experienceType === 'music' || overrides.experienceType === 'מוזיקה') {
+      isMusic = true;
+      experienceType = 'מוזיקה והופעה חיה';
+    } else if (overrides.experienceType === 'stroll') {
+      experienceType = 'טיול קצר ואווירה נעימה';
+    } else {
+      experienceType = String(overrides.experienceType);
+    }
+    extractedFacts.push({
+      id: 'f_exp_override',
+      key: 'experienceType',
+      labelHe: 'סוג בילוי מועדף',
+      labelEn: 'Preferred Experience',
+      value: experienceType,
+      certainty: 'explicit',
+      sourceNoteHe: 'הוגדר על ידך במענה לשאלת הבהרה',
+      sourceNoteEn: 'Specified by you during clarification',
+      isConfirmed: true,
+    });
   }
 
   // 3. Extract Locations without Auto-inventing
@@ -160,11 +209,27 @@ export function parseExperienceRequest(
   let transportMode: TransportMode = 'undecided';
   let isFlightImplied = false;
 
+  // Explicit flight intent check
+  const isFlightExplicitlyMentioned =
+    text.includes('טיסה') ||
+    text.includes('לטוס') ||
+    text.includes('טיסות') ||
+    text.includes('flight');
+
   // Destination detection from text
   if (text.includes('איטליה') || text.includes('פירנצה') || text.includes('רומא') || text.includes('מילאנו')) {
-    destinationLocation = text.includes('פירנצה') ? 'פירנצה, איטליה' : 'איטליה';
-    isFlightImplied = true;
-    transportMode = 'flight';
+    destinationLocation = text.includes('פירנצה')
+      ? 'פירנצה, איטליה'
+      : text.includes('רומא')
+      ? 'רומא, איטליה'
+      : 'איטליה';
+    // Do NOT automatically force flight! Allow trains/car or undecided
+    if (isFlightExplicitlyMentioned || overrides.transportMode === 'flight') {
+      isFlightImplied = true;
+      transportMode = 'flight';
+    } else {
+      transportMode = 'undecided';
+    }
     extractedFacts.push({
       id: 'f_dest',
       key: 'destination',
@@ -172,14 +237,24 @@ export function parseExperienceRequest(
       labelEn: 'Destination',
       value: destinationLocation,
       certainty: 'explicit',
-      sourceNoteHe: 'נמסר במפורש בטקסט',
-      sourceNoteEn: 'Explicitly mentioned in text',
+      sourceNoteHe: 'נמסר במפורש בטקסט (אמצעי תחבורה נותר פתוח להחלטה)',
+      sourceNoteEn: 'Explicitly mentioned in text (Transport mode left open)',
       isConfirmed: true,
     });
   } else if (text.includes('אירופה')) {
     destinationLocation = 'אירופה';
-    isFlightImplied = true;
-    transportMode = 'flight';
+    if (isFlightExplicitlyMentioned || overrides.transportMode === 'flight') {
+      isFlightImplied = true;
+      transportMode = 'flight';
+    } else {
+      transportMode = 'undecided';
+    }
+  } else if (text.includes('חו״ל') || text.includes('חול')) {
+    destinationLocation = 'חו״ל';
+    if (isFlightExplicitlyMentioned) {
+      isFlightImplied = true;
+      transportMode = 'flight';
+    }
   } else if (text.includes('תל אביב')) {
     destinationLocation = 'תל אביב';
     transportMode = 'car';
@@ -189,6 +264,32 @@ export function parseExperienceRequest(
   if (text.includes('הערב') && !destinationLocation.includes('אירופה') && !destinationLocation.includes('איטליה')) {
     isFlightImplied = false;
     transportMode = 'car';
+  }
+
+  // Handle clarified overrides for departure & culinary vibe
+  if (overrides.culinaryVibe) {
+    const vibeLabel =
+      overrides.culinaryVibe === 'italian'
+        ? 'איטלקי / פסטה ויין'
+        : overrides.culinaryVibe === 'mediterranean'
+        ? 'שף ים-תיכוני עדכני'
+        : overrides.culinaryVibe === 'kosher'
+        ? 'כשר (חלבי / דגים)'
+        : overrides.culinaryVibe === 'wine_bar'
+        ? 'בר יין ונשנושים שקטים'
+        : String(overrides.culinaryVibe);
+
+    extractedFacts.push({
+      id: 'f_culinary_vibe',
+      key: 'culinaryVibe',
+      labelHe: 'סגנון קולינרי מועדף',
+      labelEn: 'Culinary Style',
+      value: vibeLabel,
+      certainty: 'explicit',
+      sourceNoteHe: 'נבחר במענה לשאלת הבהרה',
+      sourceNoteEn: 'Selected in clarification answer',
+      isConfirmed: true,
+    });
   }
 
   // Record verified profile locations if present (NEVER invented if absent!)
@@ -220,21 +321,24 @@ export function parseExperienceRequest(
     });
   }
 
-  // 4. Extract Constraints & Windows via constraintEngine
+  // 4. Extract Constraints & Windows via updated constraintEngine
   const { constraints, timeWindows } = extractConstraintsAndWindows(text);
 
   // 5. Detect Missing Details
-  if (!experienceType && !isFood && !isMusic && !isTrip) {
+  if (!experienceType && !isFood && !isMusic && !isTrip && !overrides.experienceType) {
     missingDetails.push('אופי הפעילות או סגנון החוויה המבוקש');
   }
-  if (isFood && !departureLocation) {
+  if (isFood && !departureLocation && !overrides.departureLocation) {
     missingDetails.push('אזור המוצא או העיר שממנה אתם יוצאים');
+  }
+  if (isFood && !overrides.culinaryVibe && !profile?.preferences.some(p => p.category === 'dietary')) {
+    missingDetails.push('סגנון קולינרי מועדף (איטלקי, שף, כשר וכו׳)');
   }
   if (isTrip && !destinationLocation && !overrides.tripScope) {
     missingDetails.push('היקף החופשה (בארץ או בחו״ל)');
   }
 
-  // 6. Formulate Single Next Clarification Question
+  // 6. Formulate Single Next Clarification Question (with memory of answered overrides)
   const nextQuestion = identifyNextClarificationQuestion({
     experienceType,
     audienceType,
@@ -244,17 +348,20 @@ export function parseExperienceRequest(
     isFood,
     isMusic,
     isTrip,
+    culinaryVibe: overrides.culinaryVibe,
+    tripScope: overrides.tripScope,
     isFlightConfirmed: isFlightImplied,
     userProfile: profile,
     contacts,
+    answeredClarifications: overrides,
   });
 
   const clarificationQuestions = nextQuestion ? [nextQuestion] : [];
 
   // 7. Determine Overall Status
   let status: RequestStatus = 'understood';
-  let statusMessageHe = 'הבקשה הובנה בהצלחה';
-  let statusMessageEn = 'Request understood successfully';
+  let statusMessageHe = 'הבקשה נותחה באמצעות כללים מובנים ושקופים';
+  let statusMessageEn = 'Request analyzed using structured, transparent rules';
 
   if (clarificationQuestions.length > 0) {
     status = 'missing_details';

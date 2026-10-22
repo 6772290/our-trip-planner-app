@@ -2,11 +2,10 @@ import {
   UserProfile,
   ContactPerson,
   ClarificationQuestion,
-  LocationBreakdown,
   ActivityAudience,
 } from '../types/experience';
 
-interface KnownContext {
+export interface KnownClarificationContext {
   experienceType?: string;
   audienceType?: ActivityAudience;
   departureLocation?: string;
@@ -15,35 +14,47 @@ interface KnownContext {
   isFood?: boolean;
   isMusic?: boolean;
   isTrip?: boolean;
+  culinaryVibe?: string;
+  tripScope?: string;
   isFlightConfirmed?: boolean;
   userProfile?: UserProfile;
   contacts?: ContactPerson[];
+  answeredClarifications?: Record<string, any>;
 }
 
 /**
  * Clarification Engine:
  * Identifies what essential information is missing and formulates the single next
- * most important question, avoiding questions about details already known with certainty.
+ * most important question, avoiding questions about details already known with certainty
+ * or already answered in clarification turns.
  */
-export function identifyNextClarificationQuestion(context: KnownContext): ClarificationQuestion | null {
+export function identifyNextClarificationQuestion(context: KnownClarificationContext): ClarificationQuestion | null {
   const {
     experienceType,
-    audienceType,
     departureLocation,
     destinationLocation,
-    timeframeText,
     isFood,
     isMusic,
     isTrip,
+    culinaryVibe,
+    tripScope,
     userProfile,
+    answeredClarifications = {},
   } = context;
 
   // 1. If the core experience type / intention is completely unknown:
   // e.g. "אשתי ואני לבד הערב, מה אתה מציע?" or "אנחנו פנויים הערב"
-  if (!experienceType && !isFood && !isMusic && !isTrip) {
+  const isExperienceKnown =
+    !!experienceType ||
+    !!isFood ||
+    !!isMusic ||
+    !!isTrip ||
+    !!answeredClarifications.experienceType;
+
+  if (!isExperienceKnown) {
     return {
       id: 'q_experience_nature',
-      questionHe: 'מתחשק לכם אוכל טוב, הופעה מוזיקלית, טיול קצר או משהו אחר?',
+      questionHe: 'מתחשק לכם אוכל ומסעדה, הופעה מוזיקלית, טיול קצר או משהו אחר?',
       questionEn: 'Do you feel like good food, a live concert, a scenic stroll, or something else?',
       contextNoteHe: 'הבהרת אופי הפעילות תאפשר לנו למקד את ההצעות המדויקות ביותר עבורכם.',
       contextNoteEn: 'Clarifying the nature of the evening allows us to target exact matches.',
@@ -61,14 +72,15 @@ export function identifyNextClarificationQuestion(context: KnownContext): Clarif
   // 2. If it's food/dinner, but we don't know the departure location or preferred area:
   const profileDeparture = userProfile?.defaultActivityDepartureLocation?.trim();
   const activeDeparture = departureLocation?.trim();
-  const hasKnownDeparture = !!activeDeparture || !!profileDeparture;
+  const answeredDeparture = answeredClarifications.departureLocation;
+  const hasKnownDeparture = !!activeDeparture || !!profileDeparture || !!answeredDeparture;
 
   if (isFood && !hasKnownDeparture) {
     return {
       id: 'q_departure_area',
       questionHe: 'מאיזה אזור או עיר אתם יוצאים הערב?',
       questionEn: 'Which area or city are you departing from tonight?',
-      contextNoteHe: 'חשוב לנו לדעת מהיכן אתם מתחילים (עבודה, בית או אזור אחר) כדי למנוע נסיעות מיותרות.',
+      contextNoteHe: 'חשוב לנו לדעת מהיכן אתם מתחילים כדי להציע מקומות מתאימים ללא נסיעות מיותרות.',
       contextNoteEn: 'Helps us ensure we recommend places near your starting point without excessive travel.',
       targetField: 'departureLocation',
       options: [
@@ -83,14 +95,17 @@ export function identifyNextClarificationQuestion(context: KnownContext): Clarif
   }
 
   // 3. If it's food and departure is known, but culinary style / dietary is unknown:
-  const hasDietaryKnown =
+  const profileDietary =
     userProfile?.preferences.some((p) => p.category === 'dietary' && p.provenance === 'confirmed') || false;
+  const answeredCulinary = !!culinaryVibe || !!answeredClarifications.culinaryVibe;
 
-  if (isFood && !hasDietaryKnown) {
+  if (isFood && !profileDietary && !answeredCulinary) {
     return {
       id: 'q_culinary_vibe',
       questionHe: 'איזה סגנון קולינרי או אווירה מדברים אליכם?',
       questionEn: 'What culinary style or vibe appeals to you?',
+      contextNoteHe: 'תוכלו לבחור מהאפשרויות או להקליד בחופשיות את הסגנון הרצוי.',
+      contextNoteEn: 'Select from the options or type your preferred vibe freely.',
       targetField: 'culinaryVibe',
       options: [
         { id: 'opt_italian', labelHe: 'איטלקי / פסטה ויין', labelEn: 'Italian / Pasta & Wine', payloadValue: 'italian' },
@@ -103,7 +118,8 @@ export function identifyNextClarificationQuestion(context: KnownContext): Clarif
   }
 
   // 4. If it's a vacation/trip, but destination type / style is unknown:
-  if (isTrip && !destinationLocation) {
+  const answeredTripScope = !!tripScope || !!answeredClarifications.tripScope;
+  if (isTrip && !destinationLocation && !answeredTripScope) {
     return {
       id: 'q_trip_direction',
       questionHe: 'האם אתם מכוונים לחופשה בארץ או לנסיעה לחו״ל?',
@@ -112,14 +128,14 @@ export function identifyNextClarificationQuestion(context: KnownContext): Clarif
       contextNoteEn: 'We will never automatically assume a flight is needed unless you choose so.',
       targetField: 'tripScope',
       options: [
-        { id: 'opt_domestic', labelHe: 'חופשה בארץ (ברכב / תחבורה מקומית)', labelEn: 'Domestic (Car/Transit)', payloadValue: 'domestic' },
-        { id: 'opt_abroad', labelHe: 'נסיעה לחו״ל (כולל טיסה)', labelEn: 'International (Flight)', payloadValue: 'abroad' },
+        { id: 'opt_domestic', labelHe: 'חופשה בארץ (ברכב / תחבורה יבשתית)', labelEn: 'Domestic (Car/Transit)', payloadValue: 'domestic' },
+        { id: 'opt_abroad', labelHe: 'נסיעה לחו״ל (כולל טיסה/רכבת)', labelEn: 'International (Flight/Train)', payloadValue: 'abroad' },
         { id: 'opt_open', labelHe: 'פתוחים לשתי האפשרויות לפי האטרקטיביות', labelEn: 'Open to both', payloadValue: 'open' },
       ],
-      allowFreeText: false,
+      allowFreeText: true,
     };
   }
 
-  // No blocking clarification needed for now
+  // No blocking clarification needed
   return null;
 }

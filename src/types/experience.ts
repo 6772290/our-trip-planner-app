@@ -70,6 +70,7 @@ export interface TimeWindow {
   durationDaysMax?: number;
   preferredDaysOfWeek?: number[]; // 0=Sunday
   isFlexible: boolean;
+  notes?: string;
 }
 
 export interface ConstraintItem {
@@ -84,11 +85,14 @@ export interface ConstraintItem {
     | 'artist_event'
     | 'transport'
     | 'mobility';
+  subtype?: string; // Specific Shabbat or presence constraint classification
   descriptionHe: string;
   descriptionEn: string;
   isHardConstraint: boolean; // true = קשיח בלתי מתפשר; false = העדפה רכה וגמישה
   certainty: CertaintyLevel;
   sourceText?: string;
+  targetDate?: string;
+  targetTime?: string;
 }
 
 export interface ClarificationQuestion {
