@@ -1,10 +1,13 @@
 import React from 'react';
-import { Compass, Plus, Globe } from 'lucide-react';
+import { Compass, Plus, Globe, Sparkles, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
+
+export type NavViewType = 'welcome' | 'experiences' | 'home' | 'create_trip';
 
 interface HeaderProps {
   currentView: string;
-  onNavigate: (view: 'welcome' | 'home' | 'create_trip') => void;
+  onNavigate: (view: NavViewType) => void;
+  onOpenPrivacyCenter?: () => void;
   onOpenHowItWorks?: () => void;
   onOpenFaq?: () => void;
 }
@@ -12,6 +15,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentView,
   onNavigate,
+  onOpenPrivacyCenter,
   onOpenHowItWorks,
   onOpenFaq,
 }) => {
@@ -22,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Zone 1: Brand Wordmark */}
         <button
-          onClick={() => onNavigate('welcome')}
+          onClick={() => onNavigate('experiences')}
           className="flex items-center gap-2.5 text-stone-900 hover:text-amber-800 transition-colors whitespace-nowrap shrink-0 group focus:outline-none cursor-pointer"
         >
           <div className="w-9 h-9 rounded-xl bg-amber-800 text-white flex items-center justify-center transition-transform group-hover:scale-105 shadow-xs">
@@ -32,24 +36,35 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Zone 2: Nav links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600">
+        <nav className="hidden md:flex items-center gap-5 text-sm font-medium text-stone-600">
           <button
-            onClick={() => onNavigate('welcome')}
-            className={`whitespace-nowrap transition-colors hover:text-stone-900 cursor-pointer ${
-              currentView === 'welcome' ? 'text-amber-800 font-semibold' : ''
+            onClick={() => onNavigate('experiences')}
+            className={`whitespace-nowrap transition-colors hover:text-stone-900 cursor-pointer flex items-center gap-1.5 ${
+              currentView === 'experiences' ? 'text-amber-800 font-bold' : ''
             }`}
           >
-            {t('nav.welcome')}
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{language === 'he' ? 'חוויות ופנאי' : 'Experiences Hub'}</span>
           </button>
 
           <button
             onClick={() => onNavigate('home')}
             className={`whitespace-nowrap transition-colors hover:text-stone-900 cursor-pointer ${
-              currentView === 'home' ? 'text-amber-800 font-semibold' : ''
+              currentView === 'home' ? 'text-amber-800 font-bold' : ''
             }`}
           >
             {t('nav.trips')}
           </button>
+
+          {onOpenPrivacyCenter && (
+            <button
+              onClick={onOpenPrivacyCenter}
+              className="whitespace-nowrap transition-colors hover:text-stone-900 cursor-pointer flex items-center gap-1.5 text-stone-600"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+              <span>{language === 'he' ? 'פרטיות ואימות' : 'Privacy & Data'}</span>
+            </button>
+          )}
 
           <button
             onClick={onOpenHowItWorks}

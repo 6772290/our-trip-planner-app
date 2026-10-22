@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HebrewDatePicker } from './HebrewDatePicker';
 import { gregorianToHebrewDetailed } from '../utils/hebrewCalendarResolver';
 import { useLanguage } from '../i18n/LanguageContext';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, ChevronDown, Check } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 
-interface UnifiedDatePickerProps {
+export interface UnifiedDatePickerProps {
   valueIsoDate: string; // "YYYY-MM-DD"
   onChange: (newIsoDate: string) => void;
   calendarType: 'gregorian' | 'hebrew';
@@ -14,10 +14,9 @@ interface UnifiedDatePickerProps {
   maxYear?: number;
 }
 
-export const UnifiedDatePicker: React.FC<UnifiedDatePickerProps> = ({
+const GregorianDatePickerInternal: React.FC<UnifiedDatePickerProps> = ({
   valueIsoDate,
   onChange,
-  calendarType,
   showSecondaryCalendar = true,
   label,
   minYear = 2026,
@@ -27,21 +26,6 @@ export const UnifiedDatePicker: React.FC<UnifiedDatePickerProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // If in Hebrew mode, delegate to the HebrewDatePicker with collapsed trigger
-  if (calendarType === 'hebrew') {
-    return (
-      <HebrewDatePicker
-        label={label}
-        valueIsoDate={valueIsoDate}
-        onChange={onChange}
-        minYear={5786}
-        maxYear={5792}
-        isInline={false}
-      />
-    );
-  }
-
-  // Gregorian collapsed date-picker implementation
   const safeDate = valueIsoDate || '2026-11-01';
   const [yStr, mStr, dStr] = safeDate.split('-');
   const selectedYear = parseInt(yStr, 10) || 2026;
@@ -113,7 +97,7 @@ export const UnifiedDatePicker: React.FC<UnifiedDatePickerProps> = ({
     const h = gregorianToHebrewDetailed(safeDate);
     secondaryPreview = h.formatted;
     dayOfWeekName = h.dayOfWeekName;
-  } catch (e) {
+  } catch {
     // ignore
   }
 
@@ -311,4 +295,21 @@ export const UnifiedDatePicker: React.FC<UnifiedDatePickerProps> = ({
       )}
     </div>
   );
+};
+
+export const UnifiedDatePicker: React.FC<UnifiedDatePickerProps> = (props) => {
+  if (props.calendarType === 'hebrew') {
+    return (
+      <HebrewDatePicker
+        label={props.label}
+        valueIsoDate={props.valueIsoDate}
+        onChange={props.onChange}
+        minYear={5786}
+        maxYear={5792}
+        isInline={false}
+      />
+    );
+  }
+
+  return <GregorianDatePickerInternal {...props} />;
 };

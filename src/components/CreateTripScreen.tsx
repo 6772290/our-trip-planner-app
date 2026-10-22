@@ -40,6 +40,11 @@ import {
 interface CreateTripScreenProps {
   onTripCreated: (newTrip: Trip) => void;
   onCancel: () => void;
+  initialData?: {
+    title?: string;
+    destination?: string;
+    tripType?: TripType;
+  };
 }
 
 type WizardStep =
@@ -63,16 +68,17 @@ interface TravelerFormData {
 export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   onTripCreated,
   onCancel,
+  initialData,
 }) => {
   const { language, t } = useLanguage();
   const [currentStep, setCurrentStep] = useState<WizardStep>('basics');
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 1. Basic info
-  const [title, setTitle] = useState('');
-  const [tripType, setTripType] = useState<TripType>('couple');
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [tripType, setTripType] = useState<TripType>(initialData?.tripType || 'couple');
   const [planningMethod, setPlanningMethod] = useState<PlanningMethod>('discover_idea');
-  const [destination, setDestination] = useState('');
+  const [destination, setDestination] = useState(initialData?.destination || '');
   const [sharedMeetingLocation, setSharedMeetingLocation] = useState('');
   const [formError, setFormError] = useState('');
 
