@@ -1,0 +1,6 @@
+{
+  "name": "הטיול שלנו - תכנון טיול חכם ומותאם אישית",
+  "description": "אפליקציה חכמה לתכנון הטיול המושלם ליחידים, זוגות, משפחות וקבוצות חברים באמצעות שאלון אינטראקטיבי וזיהוי התאמות.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
