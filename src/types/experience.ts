@@ -1,8 +1,21 @@
+export type CertaintyLevel =
+  | 'explicit'            // Stated directly by the user in the prompt
+  | 'profile_confirmed'    // Verified in the user's saved profile
+  | 'partner_estimate'     // Stated as an estimate about someone else
+  | 'inferred_provisional'; // Provisional hypothesis by the system (must not be treated as fact)
+
 export type ProvenanceType = 'confirmed' | 'estimate' | 'inferred';
 
 export type PreferenceShareScope = 'private' | 'partner_only' | 'group' | 'public';
 
 export type AffinityLevel = 'yes' | 'maybe' | 'prefer_not';
+
+export type RequestStatus =
+  | 'understood'           // Request parsed, core parameters clear
+  | 'missing_details'      // Essential details are missing before a search can happen
+  | 'ready_for_search'     // All necessary criteria in place for an external search
+  | 'verified_results'     // Results from a real connected data source
+  | 'no_source_connected'; // No live source connected; concepts/ideas only
 
 export interface ProvenanceBadgeInfo {
   labelHe: string;
@@ -36,6 +49,97 @@ export const PROVENANCE_DETAILS: Record<ProvenanceType, ProvenanceBadgeInfo> = {
   },
 };
 
+export interface ExtractedFact {
+  id: string;
+  key: string;
+  labelHe: string;
+  labelEn: string;
+  value: string;
+  certainty: CertaintyLevel;
+  sourceNoteHe: string;
+  sourceNoteEn: string;
+  isConfirmed: boolean;
+}
+
+export interface TimeWindow {
+  id: string;
+  label: string; // e.g. "חלון א׳: 4 ימים בשבוע ראשון"
+  startDate?: string;
+  endDate?: string;
+  durationDaysMin?: number;
+  durationDaysMax?: number;
+  preferredDaysOfWeek?: number[]; // 0=Sunday
+  isFlexible: boolean;
+}
+
+export interface ConstraintItem {
+  id: string;
+  type:
+    | 'timeframe'
+    | 'location_departure'
+    | 'location_destination'
+    | 'shabbat_holiday'
+    | 'dietary_kosher'
+    | 'budget'
+    | 'artist_event'
+    | 'transport'
+    | 'mobility';
+  descriptionHe: string;
+  descriptionEn: string;
+  isHardConstraint: boolean; // true = קשיח בלתי מתפשר; false = העדפה רכה וגמישה
+  certainty: CertaintyLevel;
+  sourceText?: string;
+}
+
+export interface ClarificationQuestion {
+  id: string;
+  questionHe: string;
+  questionEn: string;
+  contextNoteHe?: string;
+  contextNoteEn?: string;
+  targetField: string;
+  options: Array<{
+    id: string;
+    labelHe: string;
+    labelEn: string;
+    payloadValue: any;
+  }>;
+  allowFreeText?: boolean;
+}
+
+export interface ConceptualIdea {
+  id: string;
+  titleHe: string;
+  titleEn: string;
+  category: string;
+  descriptionHe: string;
+  descriptionEn: string;
+  locationHe: string;
+  locationEn: string;
+  disclaimerHe: string;
+  disclaimerEn: string;
+  isVerified: false; // ALWAYS false until a real external service is plugged in
+}
+
+export interface ParsedRequestResult {
+  rawText: string;
+  status: RequestStatus;
+  statusMessageHe: string;
+  statusMessageEn: string;
+  experienceType?: string;
+  audienceType?: ActivityAudience;
+  participantsMentioned: string[];
+  extractedFacts: ExtractedFact[];
+  constraints: ConstraintItem[];
+  timeWindows: TimeWindow[];
+  locations: LocationBreakdown;
+  missingDetails: string[];
+  clarificationQuestions: ClarificationQuestion[];
+  conceptualIdeas: ConceptualIdea[];
+  isFlightImplied: boolean;
+  unverifiedArtistSearchRequested?: string; // e.g. "אנדרה ריו"
+}
+
 export interface PreferenceItem {
   id: string;
   category: 'dietary' | 'culture' | 'music' | 'mobility' | 'budget' | 'atmosphere' | 'other';
@@ -47,23 +151,25 @@ export interface PreferenceItem {
 
 export interface UserProfile {
   id: string;
-  fullName: string;
-  permanentHomeLocation: string; // e.g. "תל אביב, ישראל" (Permanent Residence)
-  defaultActivityDepartureLocation: string; // e.g. "משרד / רמת החייל" (Where they depart from for evening plans)
+  fullName: string; // empty string for new user
+  permanentHomeLocation: string; // empty string for new user
+  defaultActivityDepartureLocation: string; // empty string for new user
   preferences: PreferenceItem[];
-  quietDefaultEnabled: boolean; // default: true - no spam notifications or proactive prompts without explicit request
+  quietDefaultEnabled: boolean; // default: true
   allowPartnerPreferencesSync: boolean;
+  isDemo?: boolean;
 }
 
 export interface ContactPerson {
   id: string;
   name: string;
-  relationship: string; // e.g. "בת זוג", "חבר מהלימודים", "עמית מהעבודה"
-  interestInActivitiesTogether: AffinityLevel; // CRITICAL PRIVACY: Never exposed or leaked to contact!
-  privateNotes: string; // CRITICAL PRIVACY: private to user
+  relationship: string;
+  interestInActivitiesTogether: AffinityLevel; // strictly private!
+  privateNotes: string; // strictly private!
   permanentHome?: string;
   estimatedPreferences: string[];
   confirmedPreferences?: string[];
+  isDemo?: boolean;
 }
 
 export interface SavedGroup {
@@ -73,6 +179,7 @@ export interface SavedGroup {
   memberContactIds: string[];
   sharedInterests: string[];
   notes?: string;
+  isDemo?: boolean;
 }
 
 export type ActivityAudience = 'solo' | 'couple' | 'saved_group' | 'custom';
@@ -86,28 +193,13 @@ export type ActivityCategory =
 export type TransportMode = 'walk' | 'car' | 'transit_train' | 'flight' | 'undecided';
 
 export interface LocationBreakdown {
-  permanentHome: string; // Home residence (never auto-assumed without user)
-  activityDepartureLocation: string; // Distinct: Where the user actually departs from for the activity
-  destinationLocation: string; // Activity destination (city, venue, country)
+  permanentHome: string;
+  activityDepartureLocation: string;
+  destinationLocation: string;
   transportMode: TransportMode;
   isFlightRequired: boolean;
   departureAirport?: string;
   destinationAirport?: string;
-}
-
-export interface ExperienceRequest {
-  id: string;
-  freeText: string;
-  category: ActivityCategory;
-  audience: ActivityAudience;
-  selectedGroupId?: string;
-  selectedContactIds: string[];
-  locations: LocationBreakdown;
-  timeframeText: string;
-  parsedSummary?: string;
-  missingClarifications: string[]; // Questions only for genuinely missing information
-  status: 'draft' | 'analyzed' | 'ready';
-  createdAt: string;
 }
 
 export interface PoliteDeclineOption {

@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Trip, ParticipantAnswers, TripType } from './types/trip';
 import { UserProfile, ContactPerson, SavedGroup } from './types/experience';
+import {
+  createEmptyUserProfile,
+  DEMO_PROFILE,
+  DEMO_CONTACTS,
+  DEMO_SAVED_GROUPS,
+} from './data/demoProfiles';
 import { INITIAL_DEMO_TRIPS } from './data/demoTrips';
 import { Header, NavViewType } from './components/Header';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -18,99 +24,6 @@ type AppView = 'experiences' | 'welcome' | 'home' | 'create_trip' | 'questionnai
 const STORAGE_KEY = 'our_trip_applet_state_v1';
 const PROFILE_STORAGE_KEY = 'our_trip_profile_v1';
 const CONTACTS_STORAGE_KEY = 'our_trip_contacts_v1';
-
-const INITIAL_PROFILE: UserProfile = {
-  id: 'user_dan',
-  fullName: 'דן כהן',
-  permanentHomeLocation: 'תל אביב, ישראל',
-  defaultActivityDepartureLocation: 'רמת החייל (משרד)',
-  quietDefaultEnabled: true,
-  allowPartnerPreferencesSync: true,
-  preferences: [
-    {
-      id: 'pref_1',
-      category: 'dietary',
-      label: 'קולינריה איטלקית ופסטה טרייה',
-      provenance: 'confirmed',
-      scope: 'partner_only',
-      notes: 'אושר על ידך — עדיפות למסעדות שף אותנטיות',
-    },
-    {
-      id: 'pref_2',
-      category: 'culture',
-      label: 'מוזיקה חיה וקונצרטים קלאסיים (ואלסים, אנדרה ריו, תזמורות)',
-      provenance: 'confirmed',
-      scope: 'group',
-      notes: 'אושר על ידך בהעדפות הפנאי',
-    },
-    {
-      id: 'pref_3',
-      category: 'dietary',
-      label: 'בת הזוג נמנעת מגלוטן (הערכה ראשונית)',
-      provenance: 'estimate',
-      scope: 'partner_only',
-      notes: 'הערכה שסיפקת לגבי שותפתך — דורש אימות ישיר מולה',
-    },
-    {
-      id: 'pref_4',
-      category: 'atmosphere',
-      label: 'שמירה על לילה שקט לפני יום עבודה (חזרה עד 23:30)',
-      provenance: 'inferred',
-      scope: 'private',
-      notes: 'הסקה של המערכת בהתאם ללוח הזמנים השבועי',
-    },
-  ],
-};
-
-const INITIAL_CONTACTS: ContactPerson[] = [
-  {
-    id: 'c_michal',
-    name: 'מיכל כהן (בת זוג)',
-    relationship: 'בת זוג',
-    interestInActivitiesTogether: 'yes',
-    privateNotes: 'שותפה מועדפת לכל הופעה, חופשה ואירוע קולינרי',
-    permanentHome: 'תל אביב, ישראל',
-    confirmedPreferences: ['מוזיקה קלאסית', 'סיורי אמנות'],
-    estimatedPreferences: ['העדפת אוכל ללא גלוטן', 'מופעי חוצות תחת כיפת השמיים'],
-  },
-  {
-    id: 'c_yoni',
-    name: 'יוני לוי (חבר ילדות)',
-    relationship: 'חבר קרוב',
-    interestInActivitiesTogether: 'yes',
-    privateNotes: 'מתאים לטיולי שטח, מסלולי טבע ואירועי ספורט',
-    permanentHome: 'גבעתיים, ישראל',
-    confirmedPreferences: ['טיולי שטח', 'כדורסל'],
-    estimatedPreferences: ['בירות בוטיק', 'יציאות בסופי שבוע בלבד'],
-  },
-  {
-    id: 'c_roei',
-    name: 'רועי ברק (עמית לעבודה)',
-    relationship: 'קולגה מהעבודה',
-    interestInActivitiesTogether: 'maybe',
-    privateNotes: 'מתאים למיטאפים מקצועיים ואירועי חברה בלבד',
-    permanentHome: 'הרצליה, ישראל',
-    confirmedPreferences: ['טכנולוגיה'],
-    estimatedPreferences: ['פאבים שקטים'],
-  },
-];
-
-const INITIAL_SAVED_GROUPS: SavedGroup[] = [
-  {
-    id: 'grp_couple',
-    name: 'אנחנו (חופשה זוגית)',
-    type: 'couple',
-    memberContactIds: ['c_michal'],
-    sharedInterests: ['קונצרטים', 'מסעדות שף', 'סופי שבוע רומנטיים באירופה'],
-  },
-  {
-    id: 'grp_friends',
-    name: 'החבר׳ה מהאוניברסיטה',
-    type: 'friends',
-    memberContactIds: ['c_yoni', 'c_roei'],
-    sharedInterests: ['טיולי טבע', 'פאבים', 'הופעות חיות'],
-  },
-];
 
 function AppContent() {
   const { language, t } = useLanguage();
@@ -130,6 +43,7 @@ function AppContent() {
     return INITIAL_DEMO_TRIPS;
   });
 
+  // A brand new user starts with an EMPTY profile. Zero invented facts.
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     try {
       const saved = localStorage.getItem(PROFILE_STORAGE_KEY);
@@ -137,9 +51,10 @@ function AppContent() {
     } catch {
       // fallback
     }
-    return INITIAL_PROFILE;
+    return createEmptyUserProfile();
   });
 
+  // Contacts start empty for new user
   const [contacts, setContacts] = useState<ContactPerson[]>(() => {
     try {
       const saved = localStorage.getItem(CONTACTS_STORAGE_KEY);
@@ -147,10 +62,11 @@ function AppContent() {
     } catch {
       // fallback
     }
-    return INITIAL_CONTACTS;
+    return [];
   });
 
-  const [savedGroups, setSavedGroups] = useState<SavedGroup[]>(INITIAL_SAVED_GROUPS);
+  // Groups start empty for new user
+  const [savedGroups, setSavedGroups] = useState<SavedGroup[]>([]);
 
   const [currentView, setCurrentView] = useState<AppView>('experiences');
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
@@ -223,7 +139,6 @@ function AppContent() {
     setActiveTripId(trip.id);
     setActiveParticipantId(trip.participants[0]?.id || null);
 
-    // If already has answers, show summary; else start questionnaire
     const hasAnyAnswers = trip.participants.some((p) => p.isAnswered);
     if (hasAnyAnswers) {
       setCurrentView('summary');
@@ -251,6 +166,19 @@ function AppContent() {
       setActiveTripId(INITIAL_DEMO_TRIPS[0].id);
       setCurrentView('home');
     }
+  };
+
+  // Demo mode switchers (Task 1)
+  const handleLoadDemoData = () => {
+    setUserProfile(DEMO_PROFILE);
+    setContacts(DEMO_CONTACTS);
+    setSavedGroups(DEMO_SAVED_GROUPS);
+  };
+
+  const handleResetToEmptyProfile = () => {
+    setUserProfile(createEmptyUserProfile());
+    setContacts([]);
+    setSavedGroups([]);
   };
 
   const handleQuestionnaireComplete = (answers: ParticipantAnswers) => {
@@ -335,6 +263,8 @@ function AppContent() {
             contacts={contacts}
             savedGroups={savedGroups}
             onOpenPrivacyCenter={() => setIsPrivacyCenterOpen(true)}
+            onLoadDemoData={handleLoadDemoData}
+            onResetToEmpty={handleResetToEmptyProfile}
             onNavigateToTripWizard={(initial) => handleStartPlanning(initial)}
             onExploreExistingTrips={() => setCurrentView('home')}
           />
@@ -432,6 +362,8 @@ function AppContent() {
         contacts={contacts}
         onUpdateProfile={setUserProfile}
         onUpdateContacts={setContacts}
+        onLoadDemoData={handleLoadDemoData}
+        onResetToEmpty={handleResetToEmptyProfile}
       />
 
       {/* Info Modals */}

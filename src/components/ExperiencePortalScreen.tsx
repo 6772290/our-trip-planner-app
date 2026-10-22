@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ActivityCategory,
   ActivityAudience,
@@ -9,7 +9,12 @@ import {
   SavedGroup,
   ProvenanceType,
   PROVENANCE_DETAILS,
+  ParsedRequestResult,
+  ClarificationQuestion,
+  RequestStatus,
+  CertaintyLevel,
 } from '../types/experience';
+import { parseExperienceRequest } from '../engine/requestParser';
 import { useLanguage } from '../i18n/LanguageContext';
 import { AirportSearchInput } from './AirportSearchInput';
 import {
@@ -28,12 +33,13 @@ import {
   Train,
   ShieldCheck,
   ArrowRight,
-  ArrowLeft,
-  ChevronDown,
-  CheckCircle2,
-  AlertCircle,
   HelpCircle,
+  AlertCircle,
+  CheckCircle2,
+  AlertTriangle,
+  RotateCcw,
   SlidersHorizontal,
+  Info,
 } from 'lucide-react';
 
 interface ExperiencePortalScreenProps {
@@ -41,6 +47,8 @@ interface ExperiencePortalScreenProps {
   contacts: ContactPerson[];
   savedGroups: SavedGroup[];
   onOpenPrivacyCenter: () => void;
+  onLoadDemoData: () => void;
+  onResetToEmpty: () => void;
   onNavigateToTripWizard: (initialData?: {
     title?: string;
     destination?: string;
@@ -54,232 +62,72 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
   contacts,
   savedGroups,
   onOpenPrivacyCenter,
+  onLoadDemoData,
+  onResetToEmpty,
   onNavigateToTripWizard,
   onExploreExistingTrips,
 }) => {
-  const { language, t } = useLanguage();
+  const { language } = useLanguage();
 
-  // Core Request State
-  const [freeText, setFreeText] = useState('');
-  const [category, setCategory] = useState<ActivityCategory>('culture_events');
-  const [audience, setAudience] = useState<ActivityAudience>('couple');
-  const [selectedGroupId, setSelectedGroupId] = useState<string>(savedGroups[0]?.id || '');
+  // Core natural text prompt
+  const [inputText, setInputText] = useState('');
+  const [clarifiedOverrides, setClarifiedOverrides] = useState<Record<string, any>>({});
+  const [parsedResult, setParsedResult] = useState<ParsedRequestResult | null>(null);
 
-  // Locations separation state
-  const [locations, setLocations] = useState<LocationBreakdown>({
-    permanentHome: userProfile.permanentHomeLocation || '',
-    activityDepartureLocation: userProfile.defaultActivityDepartureLocation || '',
-    destinationLocation: '',
-    transportMode: 'car',
-    isFlightRequired: false,
-    departureAirport: '',
-    destinationAirport: '',
-  });
-
-  // Timeframe
-  const [timeframeText, setTimeframeText] = useState('');
-
-  // Clarifications and understanding state
-  const [analyzedSummary, setAnalyzedSummary] = useState<{
-    detectedExperience: string;
-    intendedAudience: string;
-    departurePoint: string;
-    destination: string;
-    provenanceTags: { item: string; type: ProvenanceType; sourceNote: string }[];
-    missingQuestions: string[];
-    suggestedOptions: Array<{
-      id: string;
-      title: string;
-      subtitle: string;
-      venueOrCity: string;
-      timing: string;
-      transportNotes: string;
-      category: string;
-    }>;
-  } | null>(null);
-
-  // Quick preset queries for user testing and effortless exploration
-  const handleApplyPreset = (presetText: string, cat: ActivityCategory, aud: ActivityAudience) => {
-    setFreeText(presetText);
-    setCategory(cat);
-    setAudience(aud);
-    handleAnalyzeRequest(presetText, cat, aud);
-  };
-
-  const handleAnalyzeRequest = (
-    textToAnalyze: string = freeText,
-    cat: ActivityCategory = category,
-    aud: ActivityAudience = audience
-  ) => {
+  // Parse whenever input or overrides change
+  const handleAnalyze = (textToAnalyze: string = inputText, overrides = clarifiedOverrides) => {
     const text = textToAnalyze.trim();
-    if (!text && cat !== 'surprise') {
+    if (!text) {
+      setParsedResult(null);
       return;
     }
 
-    // Determine if flights or international travel are implied
-    const isFlightImplied =
-      text.includes('אנדרה ריו') ||
-      text.includes('אירופה') ||
-      text.includes('חו"ל') ||
-      text.includes('חו״ל') ||
-      text.includes('טיסה') ||
-      text.includes('וינה') ||
-      cat === 'trips_vacations';
-
-    const defaultTransport: TransportMode = isFlightImplied ? 'flight' : 'car';
-
-    const newLocations: LocationBreakdown = {
-      ...locations,
-      isFlightRequired: isFlightImplied,
-      transportMode: defaultTransport,
-      destinationLocation: text.includes('אנדרה ריו')
-        ? 'וינה / מאסטריכט, אירופה'
-        : text.includes('מסעדה')
-        ? 'תל אביב - מרכז'
-        : locations.destinationLocation,
-    };
-    setLocations(newLocations);
-
-    // Build intelligent parsing breakdown with explicit provenance tags
-    let detectedExp = text || 'חוויה מותאמת לפי בחירה חופשית';
-    let dest = newLocations.destinationLocation || (language === 'he' ? 'ייקבע לפי החוויה' : 'To be determined');
-    let questions: string[] = [];
-    let provenanceTags: { item: string; type: ProvenanceType; sourceNote: string }[] = [];
-
-    if (text.includes('אנדרה ריו')) {
-      detectedExp = 'קונצרט של אנדרה ריו ותזמורת יוהאן שטראוס (André Rieu World Tour)';
-      dest = 'מאסטריכט (הולנד) או היכל וינר שטאדטהאלה (וינה, אוסטריה)';
-      provenanceTags = [
-        {
-          item: 'מוזיקה קלאסית קלה / ואלסים',
-          type: 'confirmed',
-          sourceNote: 'צוין במפורש בבקשה החופשית שלך',
-        },
-        {
-          item: 'יציאה זוגית רומנטית',
-          type: 'confirmed',
-          sourceNote: 'נבחרה הגדרת קהל: אני ובן/בת הזוג',
-        },
-        {
-          item: 'העדפת טיסות סדירות או הגעה ברכבת',
-          type: 'inferred',
-          sourceNote: 'הסקה עקב מיקום האירוע באירופה — טעון אישור',
-        },
-        {
-          item: 'עניין של בת הזוג בערב אלגנטי',
-          type: 'estimate',
-          sourceNote: 'מבוסס על הערכתך לגבי שותפתך לטיול',
-        },
-      ];
-      questions = [
-        language === 'he'
-          ? 'האם תרצו לשלב קונצרט בעיר הולדתו מאסטריכט (פתוח תחת כיפת השמיים) או באולם קונצרטים בווינה?'
-          : 'Do you prefer the open-air summer concert in Maastricht or an indoor concert hall in Vienna?',
-        language === 'he'
-          ? 'מה רמת הגמישות שלכם בתאריכי סוף השבוע?'
-          : 'What is your flexibility for weekend dates?',
-      ];
-    } else if (text.includes('הערב') || text.includes('פנויים הערב')) {
-      detectedExp = 'בילוי קולינרי/אינטימי זוגי להערב';
-      dest = 'אזור המרכז / קרבת נקודת היציאה מהעבודה';
-      provenanceTags = [
-        {
-          item: 'חלון זמן: הערב בלבד',
-          type: 'confirmed',
-          sourceNote: 'נמסר במפורש בטקסט',
-        },
-        {
-          item: 'יציאה מיידית מנקודת העבודה/משרד',
-          type: 'inferred',
-          sourceNote: 'הסקה על בסיס נקודת יציאה שגרתית (רמת החייל)',
-        },
-        {
-          item: 'העדפת אווירה שקטה לשיחה',
-          type: 'estimate',
-          sourceNote: 'הערכת העדפה לערב רגוע באמצע השבוע',
-        },
-      ];
-      questions = [
-        language === 'he'
-          ? 'מהו סגנון הארוחה המועדף הערב? (שף ים-תיכוני, איטלקי או יין ונשנושים)'
-          : 'What culinary style do you prefer tonight? (Mediterranean chef, Italian, or wine bar)',
-      ];
-    } else {
-      provenanceTags = [
-        {
-          item: text || 'הצעה לפי טעם אישי',
-          type: 'confirmed',
-          sourceNote: 'הוזן על ידך במערכת',
-        },
-        {
-          item: 'שמירה על שעות חזרה נוחות ללינה בבית',
-          type: 'inferred',
-          sourceNote: 'הסקה המבוססת על מגורים קבועים (תל אביב)',
-        },
-      ];
-    }
-
-    // Set curated relevant options
-    const suggested = [
-      {
-        id: 'opt_1',
-        title:
-          cat === 'culture_events' || text.includes('אנדרה ריו')
-            ? 'André Rieu & The Johann Strauss Orchestra'
-            : cat === 'food_entertainment'
-            ? 'שולחן אינטימי בבר יין וקולינריה עונתית'
-            : 'סיור בוטיק וטעימות שקיעה',
-        subtitle:
-          text.includes('אנדרה ריו')
-            ? 'חוויה מוזיקלית קסומה בווינה או מאסטריכט עם שילוב סיורי עיר'
-            : 'אווירה שקטה, חומרי גלם מקומיים וחניה נוחה סמוך לנקודת המוצא',
-        venueOrCity: dest,
-        timing: text.includes('הערב') ? 'היום בשעה 20:30' : 'סוף שבוע קרוב או תאריכים לבחירה',
-        transportNotes: isFlightImplied
-          ? 'דורש טיסה ישירה (TLV -> VIE / AMS)'
-          : 'נסיעה קצרה של 15-20 דקות מנקודת המוצא',
-        category: cat,
-      },
-      {
-        id: 'opt_2',
-        title:
-          cat === 'culture_events' || text.includes('אנדרה ריו')
-            ? 'סופשבוע מוזיקה ואמנות במרכז התרבות הבינלאומי'
-            : 'ארוחת טעימות שף סודית בהזמנה מראש',
-        subtitle: 'התאמה מלאה להעדפות הקבוצה ללא התנגשויות אילוצים',
-        venueOrCity: dest,
-        timing: 'גמיש — בהתאם ללוח המועדים שלך',
-        transportNotes: isFlightImplied ? 'טיסה קצרה או שילוב רכבת מהירה' : 'הגעה ברכב פרטי',
-        category: cat,
-      },
-    ];
-
-    setAnalyzedSummary({
-      detectedExperience: detectedExp,
-      intendedAudience:
-        aud === 'couple'
-          ? 'אני ובן/בת הזוג'
-          : aud === 'solo'
-          ? 'עבורי בלבד'
-          : aud === 'saved_group'
-          ? 'קבוצה קבועה'
-          : 'התאמה אישית',
-      departurePoint: locations.activityDepartureLocation || 'משרד / נקודת מוצא שגרתית',
-      destination: dest,
-      provenanceTags,
-      missingQuestions: questions,
-      suggestedOptions: suggested,
+    const result = parseExperienceRequest(text, {
+      userProfile,
+      contacts,
+      savedGroups,
+      clarifiedOverrides: overrides,
     });
+    setParsedResult(result);
+  };
+
+  const handleApplyPreset = (presetText: string) => {
+    setInputText(presetText);
+    setClarifiedOverrides({});
+    handleAnalyze(presetText, {});
+  };
+
+  const handleClarificationAnswer = (field: string, value: any) => {
+    const newOverrides = { ...clarifiedOverrides, [field]: value };
+    setClarifiedOverrides(newOverrides);
+    handleAnalyze(inputText, newOverrides);
+  };
+
+  const handleResetClarifications = () => {
+    setClarifiedOverrides({});
+    handleAnalyze(inputText, {});
   };
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-8">
-      {/* Top Welcome & Philosophy Banner */}
+      {/* Top Banner & Philosophy */}
       <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-stone-900 via-stone-850 to-amber-950 text-white p-6 sm:p-10 shadow-xl">
-        <div className="relative z-10 max-w-2xl space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold border border-amber-500/30">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{language === 'he' ? 'חוויה לפני לוגיסטיקה' : 'Experience Before Logistics'}</span>
+        <div className="relative z-10 max-w-3xl space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold border border-amber-500/30">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{language === 'he' ? 'חוויה לפני לוגיסטיקה' : 'Experience Before Logistics'}</span>
+            </div>
+
+            {userProfile.isDemo ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/30 text-amber-200 text-xs font-semibold border border-amber-400/40">
+                <span>{language === 'he' ? 'מצב הדגמה פעיל (דן כהן)' : 'Demo Data Active'}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
+                <span>{language === 'he' ? 'פרופיל אישי נקי' : 'Clean Personal Profile'}</span>
+              </span>
+            )}
           </div>
 
           <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
@@ -290,594 +138,469 @@ export const ExperiencePortalScreen: React.FC<ExperiencePortalScreenProps> = ({
 
           <p className="text-stone-300 text-xs sm:text-sm leading-relaxed">
             {language === 'he'
-              ? 'אינכם צריכים להתחיל בחיפוש טיסות או שדות תעופה. ספרו במילים שלכם מה מתחשק לכם — הופעה מיוחדת, מסעדה שקטה להערב, סופשבוע תרבות או חופשה מלאה.'
-              : 'No need to begin with flight searches or dates. Describe what you feel like in plain words — a concert, a quiet dinner tonight, or a full weekend getaway.'}
+              ? 'מנוע תכנון חכם המבוסס על שפה טבעית, זיהוי אילוצים ושאלות הבהרה מדויקות. ללא המצאת עובדות וללא הנחות מוקדמות.'
+              : 'Intelligent planning engine driven by natural language, constraint detection, and focused clarifications. Zero fake facts and zero assumptions.'}
           </p>
 
-          {/* Quick links to Privacy Center and Existing Trips */}
+          {/* Quick controls */}
           <div className="pt-2 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={onOpenPrivacyCenter}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-stone-100 text-xs font-bold transition-all border border-white/15 cursor-pointer backdrop-blur-xs"
             >
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>{language === 'he' ? 'מרכז פרטיות ואימות נתונים' : 'Privacy & Data Center'}</span>
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>{language === 'he' ? 'מרכז פרטיות ופרופיל' : 'Privacy & Profile'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={onExploreExistingTrips}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-700/80 hover:bg-amber-600 text-white text-xs font-bold transition-all cursor-pointer"
-            >
-              <Compass className="w-4 h-4" />
-              <span>{language === 'he' ? 'רשימת תוכניות הטיול השמורות' : 'Saved Trips & Plans'}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Experience Request Builder */}
-      <div className="bg-white rounded-3xl border border-stone-200 p-5 sm:p-8 shadow-sm space-y-6">
-        {/* Step 1: Natural Language Free Expression */}
-        <div className="space-y-2">
-          <label className="block text-sm font-bold text-stone-900">
-            {language === 'he'
-              ? 'ספרו למערכת בשפה חופשית מה תרצו לעשות:'
-              : 'Describe what you want in plain words:'}
-          </label>
-          <div className="relative">
-            <textarea
-              rows={3}
-              value={freeText}
-              onChange={(e) => setFreeText(e.target.value)}
-              placeholder={
-                language === 'he'
-                  ? 'לדוגמה: "אשתי ואני פנויים הערב למשהו אינטימי ורגוע", "אני רוצה לראות הופעה של אנדרה ריו באירופה", או "יש לנו 4 ימים לחופשת סתיו רגועה"...'
-                  : 'e.g. "My partner and I are free tonight for a quiet dinner", "I want to see André Rieu in Europe", or "We have 4 days for a relaxed trip"...'
-              }
-              className="w-full p-4 rounded-2xl border border-stone-300 text-sm focus:ring-2 focus:ring-amber-800 focus:border-amber-800 transition-all text-stone-900 placeholder:text-stone-400"
-            />
-          </div>
-
-          {/* Quick preset suggestions */}
-          <div className="flex items-center gap-2 flex-wrap pt-1 text-xs text-stone-600">
-            <span className="font-semibold text-stone-500">
-              {language === 'he' ? 'דוגמאות לבדיקה מהירה:' : 'Quick Examples:'}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                handleApplyPreset(
-                  'אני רוצה לראות הופעה של אנדרה ריו ותזמורת יוהאן שטראוס באירופה בסתיו הקרוב',
-                  'culture_events',
-                  'couple'
-                )
-              }
-              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-            >
-              🎻 {language === 'he' ? 'הופעה של אנדרה ריו באירופה' : 'André Rieu in Europe'}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                handleApplyPreset(
-                  'אשתי ואני פנויים הערב, מחפשים מסעדה שקטה עם אוכל טוב ושיחה נעימה',
-                  'food_entertainment',
-                  'couple'
-                )
-              }
-              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-            >
-              🍷 {language === 'he' ? 'אשתי ואני פנויים הערב' : 'Free tonight with partner'}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                handleApplyPreset(
-                  'יש לנו ארבעה ימים פנויים ואנחנו רוצים חופשה נעימה בטבע עם הילדים',
-                  'trips_vacations',
-                  'saved_group'
-                )
-              }
-              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
-            >
-              🏕️ {language === 'he' ? 'חופשה של ארבעה ימים' : '4-day family getaway'}
-            </button>
-          </div>
-        </div>
-
-        {/* 4 Core Category Cards */}
-        <div className="space-y-2">
-          <label className="block text-xs font-bold text-stone-900">
-            {language === 'he' ? 'סוג החוויה המבוקשת:' : 'Type of Experience:'}
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {/* Surprise me */}
-            <button
-              type="button"
-              onClick={() => setCategory('surprise')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-2 ${
-                category === 'surprise'
-                  ? 'border-amber-800 bg-amber-50/70 text-amber-900 font-bold shadow-xs'
-                  : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
-              }`}
-            >
-              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <span className="text-xs sm:text-sm font-bold">
-                {language === 'he' ? 'תפתיע אותי' : 'Surprise Me'}
-              </span>
-            </button>
-
-            {/* Culture & Events */}
-            <button
-              type="button"
-              onClick={() => setCategory('culture_events')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-2 ${
-                category === 'culture_events'
-                  ? 'border-amber-800 bg-amber-50/70 text-amber-900 font-bold shadow-xs'
-                  : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
-              }`}
-            >
-              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center">
-                <Music className="w-5 h-5" />
-              </div>
-              <span className="text-xs sm:text-sm font-bold">
-                {language === 'he' ? 'תרבות ואירועים' : 'Culture & Events'}
-              </span>
-            </button>
-
-            {/* Food & Entertainment */}
-            <button
-              type="button"
-              onClick={() => setCategory('food_entertainment')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-2 ${
-                category === 'food_entertainment'
-                  ? 'border-amber-800 bg-amber-50/70 text-amber-900 font-bold shadow-xs'
-                  : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
-              }`}
-            >
-              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center">
-                <UtensilsCrossed className="w-5 h-5" />
-              </div>
-              <span className="text-xs sm:text-sm font-bold">
-                {language === 'he' ? 'אוכל ובילויים' : 'Food & Nightlife'}
-              </span>
-            </button>
-
-            {/* Trips & Vacations */}
-            <button
-              type="button"
-              onClick={() => setCategory('trips_vacations')}
-              className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-2 ${
-                category === 'trips_vacations'
-                  ? 'border-amber-800 bg-amber-50/70 text-amber-900 font-bold shadow-xs'
-                  : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
-              }`}
-            >
-              <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-800 flex items-center justify-center">
-                <Plane className="w-5 h-5" />
-              </div>
-              <span className="text-xs sm:text-sm font-bold">
-                {language === 'he' ? 'טיולים וחופשות' : 'Trips & Vacations'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Audience Selector */}
-        <div className="space-y-2">
-          <label className="block text-xs font-bold text-stone-900">
-            {language === 'he' ? 'עבור מי הפעילות?' : 'Who is this experience for?'}
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <button
-              type="button"
-              onClick={() => setAudience('solo')}
-              className={`p-3 rounded-xl border text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                audience === 'solo'
-                  ? 'bg-amber-800 text-white border-amber-800 shadow-xs'
-                  : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
-              }`}
-            >
-              <User className="w-4 h-4" />
-              <span>{language === 'he' ? 'עבורי (יחיד)' : 'For Me (Solo)'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAudience('couple')}
-              className={`p-3 rounded-xl border text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                audience === 'couple'
-                  ? 'bg-amber-800 text-white border-amber-800 shadow-xs'
-                  : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
-              }`}
-            >
-              <Heart className="w-4 h-4" />
-              <span>{language === 'he' ? 'אני ובן/בת הזוג' : 'Partner & Me'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAudience('saved_group')}
-              className={`p-3 rounded-xl border text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                audience === 'saved_group'
-                  ? 'bg-amber-800 text-white border-amber-800 shadow-xs'
-                  : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>{language === 'he' ? 'קבוצה קבועה' : 'Saved Group'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAudience('custom')}
-              className={`p-3 rounded-xl border text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                audience === 'custom'
-                  ? 'bg-amber-800 text-white border-amber-800 shadow-xs'
-                  : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
-              }`}
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              <span>{language === 'he' ? 'בחירת משתתפים' : 'Custom People'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Explicit Location Separation Section */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-amber-800" />
-              <span>
-                {language === 'he'
-                  ? 'הקשר גיאוגרפי (הפרדה בין מגורים, נקודת יציאה ויעד)'
-                  : 'Geographic Context (Home vs. Departure vs. Destination)'}
-              </span>
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
-            {/* Permanent Home */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-stone-700">
-                {language === 'he' ? 'מגורים קבועים:' : 'Permanent Home:'}
-              </label>
-              <input
-                type="text"
-                value={locations.permanentHome}
-                onChange={(e) => setLocations({ ...locations, permanentHome: e.target.value })}
-                placeholder={language === 'he' ? 'תל אביב, ישראל' : 'Tel Aviv, Israel'}
-                className="w-full px-3 py-2 bg-white rounded-xl border border-stone-300 text-xs"
-              />
-            </div>
-
-            {/* Departure point for this activity */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-stone-700">
-                {language === 'he' ? 'נקודת יציאה לפעילות זו:' : 'Departure point for this event:'}
-              </label>
-              <input
-                type="text"
-                value={locations.activityDepartureLocation}
-                onChange={(e) =>
-                  setLocations({ ...locations, activityDepartureLocation: e.target.value })
-                }
-                placeholder={
-                  language === 'he'
-                    ? 'לדוגמה: משרד (רמת החייל) / בית'
-                    : 'e.g. Office / Work / Home'
-                }
-                className="w-full px-3 py-2 bg-white rounded-xl border border-stone-300 text-xs"
-              />
-            </div>
-
-            {/* Target Venue / City */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-stone-700">
-                {language === 'he' ? 'יעד מבוקש (אם קיים):' : 'Destination (if known):'}
-              </label>
-              <input
-                type="text"
-                value={locations.destinationLocation}
-                onChange={(e) =>
-                  setLocations({ ...locations, destinationLocation: e.target.value })
-                }
-                placeholder={language === 'he' ? 'עיר / אולם / ארץ' : 'City / Venue / Country'}
-                className="w-full px-3 py-2 bg-white rounded-xl border border-stone-300 text-xs"
-              />
-            </div>
-          </div>
-
-          {/* Transportation Mode */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-[11px] font-bold text-stone-700">
-              {language === 'he' ? 'אמצעי תחבורה צפוי:' : 'Expected Mode of Transportation:'}
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {userProfile.isDemo ? (
               <button
                 type="button"
-                onClick={() => setLocations({ ...locations, transportMode: 'car', isFlightRequired: false })}
-                className={`p-2 rounded-xl border text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
-                  locations.transportMode === 'car'
-                    ? 'bg-amber-800 text-white border-amber-800 font-bold'
-                    : 'bg-white text-stone-700 border-stone-200'
-                }`}
+                onClick={onResetToEmpty}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all border border-stone-600 cursor-pointer"
               >
-                <Car className="w-3.5 h-3.5" />
-                <span>{language === 'he' ? 'רכב פרטי' : 'Private Car'}</span>
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{language === 'he' ? 'מעבר לפרופיל נקי' : 'Switch to Clean Profile'}</span>
               </button>
-
+            ) : (
               <button
                 type="button"
-                onClick={() => setLocations({ ...locations, transportMode: 'walk', isFlightRequired: false })}
-                className={`p-2 rounded-xl border text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
-                  locations.transportMode === 'walk'
-                    ? 'bg-amber-800 text-white border-amber-800 font-bold'
-                    : 'bg-white text-stone-700 border-stone-200'
-                }`}
+                onClick={onLoadDemoData}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-800/80 hover:bg-amber-700 text-white text-xs font-bold transition-all cursor-pointer"
               >
-                <Footprints className="w-3.5 h-3.5" />
-                <span>{language === 'he' ? 'הליכה ברגל' : 'Walking'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setLocations({ ...locations, transportMode: 'transit_train', isFlightRequired: false })}
-                className={`p-2 rounded-xl border text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
-                  locations.transportMode === 'transit_train'
-                    ? 'bg-amber-800 text-white border-amber-800 font-bold'
-                    : 'bg-white text-stone-700 border-stone-200'
-                }`}
-              >
-                <Train className="w-3.5 h-3.5" />
-                <span>{language === 'he' ? 'תחבורה / רכבת' : 'Transit / Train'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setLocations({ ...locations, transportMode: 'flight', isFlightRequired: true })}
-                className={`p-2 rounded-xl border text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
-                  locations.transportMode === 'flight'
-                    ? 'bg-amber-800 text-white border-amber-800 font-bold'
-                    : 'bg-white text-stone-700 border-stone-200'
-                }`}
-              >
-                <Plane className="w-3.5 h-3.5" />
-                <span>{language === 'he' ? 'טיסה בינלאומית' : 'Flight'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Airport search ONLY when flight is required */}
-          {locations.isFlightRequired && (
-            <div className="pt-3 border-t border-stone-200 space-y-3">
-              <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                <Plane className="w-4 h-4 text-amber-800" />
-                <span>
-                  {language === 'he'
-                    ? 'בחירת שדות תעופה (מופעל רק עבור נסיעות הכוללות טיסות)'
-                    : 'Airport Selection (Activated only when flights are involved)'}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <AirportSearchInput
-                  label={language === 'he' ? 'שדה תעופה יציאה:' : 'Departure Airport:'}
-                  value={locations.departureAirport || ''}
-                  onChange={(val) => setLocations({ ...locations, departureAirport: val })}
-                  placeholder={
-                    language === 'he'
-                      ? 'לדוגמה: נתב"ג (TLV)...'
-                      : 'e.g. Tel Aviv Ben Gurion (TLV)...'
-                  }
-                />
-                <AirportSearchInput
-                  label={language === 'he' ? 'שדה תעופה יעד:' : 'Destination Airport:'}
-                  value={locations.destinationAirport || ''}
-                  onChange={(val) => setLocations({ ...locations, destinationAirport: val })}
-                  placeholder={
-                    language === 'he'
-                      ? 'לדוגמה: מילאנו מלפנזה (MXP), וינה (VIE)...'
-                      : 'e.g. Milan Malpensa (MXP), Vienna (VIE)...'
-                  }
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Action Button: Analyze Request */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-          <div className="text-xs text-stone-500">
-            {language === 'he'
-              ? 'המערכת תציג את הבנתה ותבדוק אם חסרים פרטים חיוניים'
-              : 'The system will show its interpretation and verify missing essentials'}
-          </div>
-
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            {category === 'trips_vacations' && (
-              <button
-                type="button"
-                onClick={() =>
-                  onNavigateToTripWizard({
-                    title: freeText || (language === 'he' ? 'טיול חופשה מתוכנן' : 'Planned Vacation'),
-                    destination: locations.destinationLocation || '',
-                    tripType: audience === 'couple' ? 'couple' : audience === 'solo' ? 'solo' : 'friends',
-                  })
-                }
-                className="w-full sm:w-auto px-5 py-3 rounded-xl bg-stone-800 hover:bg-stone-900 text-white font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <span>{language === 'he' ? 'מעבר לתכנון מסע רב-שלבי' : 'Open Multi-Step Planner'}</span>
-                <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                <span>{language === 'he' ? 'טען נתוני הדגמה' : 'Load Demo Data'}</span>
               </button>
             )}
 
             <button
               type="button"
-              onClick={() => handleAnalyzeRequest()}
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-800 hover:bg-amber-900 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+              onClick={onExploreExistingTrips}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800/60 hover:bg-stone-700 text-stone-200 text-xs font-bold transition-all cursor-pointer"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>{language === 'he' ? 'פיענוח הבקשה והתאמת חוויות' : 'Analyze Request & Match'}</span>
+              <Compass className="w-4 h-4" />
+              <span>{language === 'he' ? 'רשימת הטיולים השמורים' : 'Saved Trips'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Intelligent Request Understanding & Provenance Breakdown */}
-      {analyzedSummary && (
+      {/* Main Request Input Panel */}
+      <div className="bg-white rounded-3xl border border-stone-200 p-5 sm:p-8 shadow-sm space-y-6">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-bold text-stone-900">
+              {language === 'he'
+                ? 'כתבו בקשה חופשית (סוג בילוי, משתתפים, חלונות תאריכים או אילוצים):'
+                : 'Describe your request freely (experience type, participants, date windows, constraints):'}
+            </label>
+            {Object.keys(clarifiedOverrides).length > 0 && (
+              <button
+                type="button"
+                onClick={handleResetClarifications}
+                className="text-xs text-amber-800 hover:text-amber-900 font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{language === 'he' ? 'אפס תשובות הבהרה' : 'Reset clarifications'}</span>
+              </button>
+            )}
+          </div>
+
+          <textarea
+            rows={3}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={
+              language === 'he'
+                ? 'לדוגמה: "אשתי ואני לבד הערב, מה אתה מציע?", "אני רוצה לראות הופעה של אנדרה ריו באירופה", או "יש לי ארבעה ימים פנויים באחד משני שבועות ואני חייב לחזור לפני שבת"...'
+                : 'e.g. "My partner and I are free tonight, what do you suggest?", "I want to see André Rieu in Europe", or "I have 4 free days in one of two weeks and must return before Shabbat"...'
+            }
+            className="w-full p-4 rounded-2xl border border-stone-300 text-sm focus:ring-2 focus:ring-amber-800 focus:border-amber-800 transition-all text-stone-900 placeholder:text-stone-400"
+          />
+
+          {/* Preset Buttons for easy testing of real edge cases */}
+          <div className="flex items-center gap-2 flex-wrap pt-1 text-xs text-stone-600">
+            <span className="font-semibold text-stone-500">
+              {language === 'he' ? 'מבחני מערכת לדוגמה:' : 'System test examples:'}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleApplyPreset('אשתי ואני לבד הערב, מה אתה מציע?')}
+              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
+            >
+              🍷 {language === 'he' ? 'אשתי ואני לבד הערב' : 'Partner & I free tonight'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyPreset('אני רוצה לראות הופעה של אנדרה ריו, לא משנה באיזו מדינה')}
+              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
+            >
+              🎻 {language === 'he' ? 'אנדרה ריו (ללא תלות במדינה)' : 'André Rieu anywhere'}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleApplyPreset(
+                  'יש לי ארבעה ימים פנויים באחד משני שבועות, חייב לחזור לפני שבת ומחפש מסעדה כשרה'
+                )
+              }
+              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors cursor-pointer"
+            >
+              🗓️ {language === 'he' ? '4 ימים בשני שבועות + שבת + כשר' : '4 days in 2 weeks + Shabbat'}
+            </button>
+          </div>
+        </div>
+
+        {/* Action Button: Run Request Understanding Engine */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-stone-100">
+          <div className="text-xs text-stone-500">
+            {language === 'he'
+              ? 'המנוע מנתח אילוצים קשיחים, מזהה מידע חסר ושואל שאלות הבהרה ללא המצאת נתונים'
+              : 'The engine parses constraints, identifies missing info, and asks focused questions'}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleAnalyze()}
+            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-800 hover:bg-amber-900 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>{language === 'he' ? 'פיענוח הבקשה ובדיקת אילוצים' : 'Parse Request & Evaluate'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Engine Understanding & Progressive Clarification Output */}
+      {parsedResult && (
         <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-stone-200 pb-4">
-            <div className="flex items-center gap-2.5">
-              <CheckCircle2 className="w-6 h-6 text-emerald-700" />
+          {/* Status Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 pb-4">
+            <div className="flex items-center gap-3">
+              {parsedResult.status === 'missing_details' ? (
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <HelpCircle className="w-5 h-5" />
+                </div>
+              ) : parsedResult.status === 'no_source_connected' ? (
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
+                  <Info className="w-5 h-5" />
+                </div>
+              ) : (
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+              )}
+
               <div>
-                <h2 className="text-lg font-bold text-stone-900">
-                  {language === 'he' ? 'הבנת המערכת ואימות נתונים' : 'System Understanding & Data Provenance'}
-                </h2>
-                <p className="text-xs text-stone-500">
-                  {language === 'he'
-                    ? 'בדיקת ההסקה, ההערכות והמידע המאושר טרם בחירת הפעילות'
-                    : 'Verify inferred, estimated, and confirmed data before finalizing'}
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-stone-900">
+                    {language === 'he' ? 'סטטוס הבקשה:' : 'Request Status:'}
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                      parsedResult.status === 'missing_details'
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : parsedResult.status === 'no_source_connected'
+                        ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                        : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                    }`}
+                  >
+                    {language === 'he' ? parsedResult.statusMessageHe : parsedResult.statusMessageEn}
+                  </span>
+                </div>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  {parsedResult.status === 'no_source_connected'
+                    ? (language === 'he'
+                        ? 'מקורות מידע חיצוניים (כרטיסים/הזמנת שולחן) אינם מחוברים כרגע — לא נציג מידע מומצא כעובדה'
+                        : 'External booking/ticketing APIs not connected — No fake availability presented')
+                    : (language === 'he'
+                        ? 'המערכת מזהה את מה שידוע בוודאות מול מה שחסר להמשך'
+                        : 'System delineates confirmed knowledge vs missing essentials')}
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onOpenPrivacyCenter}
-              className="text-xs font-bold text-amber-800 hover:text-amber-900 flex items-center gap-1 cursor-pointer"
-            >
-              <span>{language === 'he' ? 'ניהול הרשאות מלא' : 'Full Permissions'}</span>
-              <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
-            </button>
+            {/* Bridge to 5-Step Trip Planner button if relevant */}
+            {parsedResult.isFlightImplied || parsedResult.timeWindows.length > 0 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onNavigateToTripWizard({
+                    title: parsedResult.rawText.slice(0, 40),
+                    destination: parsedResult.locations.destinationLocation || '',
+                    tripType: parsedResult.audienceType === 'couple' ? 'couple' : 'friends',
+                  })
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold transition-all cursor-pointer self-start sm:self-center"
+              >
+                <span>{language === 'he' ? 'העבר לאשף הטיולים המלא' : 'Transfer to Trip Wizard'}</span>
+                <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
+              </button>
+            ) : null}
           </div>
 
-          {/* Key Facts Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200">
-              <span className="text-[11px] font-bold text-stone-500 block">
-                {language === 'he' ? 'החוויה שזוהתה:' : 'Detected Experience:'}
-              </span>
-              <span className="font-bold text-sm text-stone-900">
-                {analyzedSummary.detectedExperience}
-              </span>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200">
-              <span className="text-[11px] font-bold text-stone-500 block">
-                {language === 'he' ? 'קהל היעד:' : 'Intended Audience:'}
-              </span>
-              <span className="font-bold text-sm text-stone-900">
-                {analyzedSummary.intendedAudience}
-              </span>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200">
-              <span className="text-[11px] font-bold text-stone-500 block">
-                {language === 'he' ? 'יעד / מיקום מתוכנן:' : 'Planned Destination:'}
-              </span>
-              <span className="font-bold text-sm text-stone-900">
-                {analyzedSummary.destination}
-              </span>
-            </div>
-          </div>
-
-          {/* Provenance Tags breakdown */}
-          <div className="space-y-2">
-            <span className="text-xs font-bold text-stone-900 block">
-              {language === 'he'
-                ? 'סיווג מקורות המידע והאמינות (שקיפות מלאה):'
-                : 'Data Provenance & Reliability Classification (Full Transparency):'}
-            </span>
-            <div className="space-y-2">
-              {analyzedSummary.provenanceTags.map((tag, idx) => {
-                const badge = PROVENANCE_DETAILS[tag.type];
-                return (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-xl border border-stone-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                  >
-                    <div className="space-y-0.5">
-                      <span className="font-bold text-stone-900 text-xs sm:text-sm">{tag.item}</span>
-                      <p className="text-[11px] text-stone-500">{tag.sourceNote}</p>
-                    </div>
-
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-xs font-bold border self-start sm:self-center shrink-0 ${badge.colorClass}`}
-                    >
-                      {language === 'he' ? badge.labelHe : badge.labelEn}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Missing Questions (Only genuinely missing info per requirements) */}
-          {analyzedSummary.missingQuestions.length > 0 && (
-            <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-300 space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
-                <HelpCircle className="w-4 h-4 text-amber-800" />
-                <span>
-                  {language === 'he'
-                    ? 'שאלות הבהרה חיוניות (המערכת שואלת רק מה שבאמת נחוץ):'
-                    : 'Essential Clarification Questions (Asked only when strictly missing):'}
-                </span>
+          {/* SMART CLARIFICATION QUESTION (Task 4) */}
+          {parsedResult.clarificationQuestions.length > 0 && (
+            <div className="p-5 rounded-2xl bg-amber-50/80 border border-amber-300 space-y-4">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-amber-800 shrink-0" />
+                <div>
+                  <h3 className="font-bold text-sm text-amber-950">
+                    {language === 'he' ? 'שאלת הבהרה שיחתית:' : 'Conversational Clarification:'}
+                  </h3>
+                  <p className="text-xs text-amber-900">
+                    {language === 'he'
+                      ? 'במקום להציג הצעות מומצאות, המערכת מבררת רק את הפרט החשוב ביותר שחסר.'
+                      : 'Rather than fabricating suggestions, the engine asks only the single missing essential.'}
+                  </p>
+                </div>
               </div>
-              <ul className="list-disc list-inside space-y-1 text-xs text-amber-950 font-medium">
-                {analyzedSummary.missingQuestions.map((q, idx) => (
-                  <li key={idx}>{q}</li>
-                ))}
-              </ul>
+
+              {parsedResult.clarificationQuestions.map((q) => (
+                <div key={q.id} className="space-y-3 pt-1">
+                  <div className="font-bold text-sm text-stone-900">
+                    {language === 'he' ? q.questionHe : q.questionEn}
+                  </div>
+
+                  {q.contextNoteHe && (
+                    <div className="text-xs text-stone-600">
+                      {language === 'he' ? q.contextNoteHe : q.contextNoteEn}
+                    </div>
+                  )}
+
+                  {/* Clarification Options */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {q.options.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleClarificationAnswer(q.targetField, opt.payloadValue)}
+                        className="p-3 rounded-xl border border-amber-300 bg-white hover:bg-amber-100 hover:border-amber-400 text-xs font-bold text-stone-800 text-center transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        {language === 'he' ? opt.labelHe : opt.labelEn}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* Suggested Matching Experiences */}
-          <div className="space-y-3 pt-2">
-            <span className="text-sm font-bold text-stone-900 block">
-              {language === 'he' ? 'הצעות פעילות רלוונטיות לבחירתכם:' : 'Relevant Experience Matches:'}
-            </span>
+          {/* EXTRACTED FACTS & PROVENANCE (Task 2) */}
+          <div className="space-y-3">
+            <h3 className="font-bold text-xs sm:text-sm text-stone-900 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+              <span>
+                {language === 'he'
+                  ? 'מידע מובנה שחולץ (עם רמת ודאות ומקור מידע שקוף):'
+                  : 'Structured Extracted Facts (Transparent Certainty & Provenance):'}
+              </span>
+            </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {analyzedSummary.suggestedOptions.map((opt) => (
-                <div
-                  key={opt.id}
-                  className="p-4 rounded-2xl border border-stone-200 bg-white hover:border-amber-700 transition-all shadow-xs space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-1.5">
-                    <span className="font-bold text-sm text-stone-900 block">{opt.title}</span>
-                    <p className="text-xs text-stone-600 leading-relaxed">{opt.subtitle}</p>
+            {parsedResult.extractedFacts.length === 0 ? (
+              <div className="p-4 rounded-xl border border-dashed border-stone-200 text-xs text-stone-500">
+                {language === 'he'
+                  ? 'לא נמסרו פרטים מזוהים. המערכת אינה ממלאת פרטים ללא אישורך.'
+                  : 'No verified details provided yet. The system never invents details without confirmation.'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {parsedResult.extractedFacts.map((fact) => (
+                  <div
+                    key={fact.id}
+                    className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/70 flex flex-col justify-between gap-2"
+                  >
+                    <div>
+                      <span className="text-[11px] font-bold text-stone-500 block">
+                        {language === 'he' ? fact.labelHe : fact.labelEn}:
+                      </span>
+                      <span className="font-bold text-sm text-stone-900">{fact.value}</span>
+                    </div>
 
-                    <div className="pt-1 flex flex-col gap-1 text-[11px] text-stone-500">
-                      <div className="flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-amber-800" />
-                        <span>{opt.venueOrCity}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-amber-800" />
-                        <span>{opt.timing}</span>
-                      </div>
+                    <div className="flex items-center justify-between text-[11px] border-t border-stone-200/60 pt-1.5">
+                      <span className="text-stone-500">
+                        {language === 'he' ? fact.sourceNoteHe : fact.sourceNoteEn}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                          fact.certainty === 'explicit'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : fact.certainty === 'profile_confirmed'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {fact.certainty === 'explicit'
+                          ? (language === 'he' ? 'נמסר במפורש' : 'Explicit')
+                          : fact.certainty === 'profile_confirmed'
+                          ? (language === 'he' ? 'מפרופיל מאושר' : 'Profile')
+                          : (language === 'he' ? 'הסקה זמנית' : 'Inferred')}
+                      </span>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-                  <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-                    <span className="text-[11px] text-stone-500 font-medium">{opt.transportNotes}</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onNavigateToTripWizard({
-                          title: opt.title,
-                          destination: opt.venueOrCity,
-                          tripType: audience === 'couple' ? 'couple' : 'friends',
-                        })
-                      }
-                      className="px-3 py-1.5 rounded-lg bg-amber-800 text-white font-bold text-xs hover:bg-amber-900 cursor-pointer transition-colors"
+          {/* ACTIVE CONSTRAINTS & ALTERNATIVE TIME WINDOWS (Task 3) */}
+          <div className="space-y-3 pt-2">
+            <h3 className="font-bold text-xs sm:text-sm text-stone-900 flex items-center gap-1.5">
+              <SlidersHorizontal className="w-4 h-4 text-amber-800" />
+              <span>
+                {language === 'he'
+                  ? 'אילוצים קשיחים, העדפות גמישות וחלונות זמן:'
+                  : 'Hard Constraints, Soft Preferences & Time Windows:'}
+              </span>
+            </h3>
+
+            {/* Time Windows */}
+            {parsedResult.timeWindows.length > 0 && (
+              <div className="p-3.5 rounded-xl border border-stone-200 bg-white space-y-2">
+                <span className="text-xs font-bold text-stone-700 block">
+                  {language === 'he' ? 'חלונות זמן חלופיים שזוהו:' : 'Identified Time Windows:'}
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {parsedResult.timeWindows.map((win) => (
+                    <div
+                      key={win.id}
+                      className="p-2.5 rounded-lg bg-stone-50 border border-stone-200 text-xs space-y-1"
                     >
-                      {language === 'he' ? 'בחר פעילות זו' : 'Select Experience'}
-                    </button>
+                      <div className="font-bold text-stone-900">{win.label}</div>
+                      <div className="text-[11px] text-stone-500">
+                        {language === 'he'
+                          ? `משך: ${win.durationDaysMin} ימים | גמישות: ${win.isFlexible ? 'כן' : 'קבוע'}`
+                          : `Duration: ${win.durationDaysMin} days | Flexible: ${win.isFlexible ? 'Yes' : 'Fixed'}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Constraints List */}
+            {parsedResult.constraints.length > 0 ? (
+              <div className="space-y-2">
+                {parsedResult.constraints.map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-3 rounded-xl border border-stone-200 bg-white flex items-center justify-between text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <span className="font-semibold text-stone-900">
+                        {language === 'he' ? c.descriptionHe : c.descriptionEn}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${
+                        c.isHardConstraint
+                          ? 'bg-rose-50 text-rose-800 border border-rose-300'
+                          : 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                      }`}
+                    >
+                      {c.isHardConstraint
+                        ? (language === 'he' ? 'אילוץ קשיח מחייב' : 'Hard Constraint')
+                        : (language === 'he' ? 'העדפה גמישה' : 'Soft Preference')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-stone-500 italic">
+                {language === 'he'
+                  ? 'לא זוהו אילוצים קשיחים מיוחדים בבקשה.'
+                  : 'No specific hard constraints detected in request.'}
+              </div>
+            )}
+          </div>
+
+          {/* LOCATION & TRANSPORT CONTEXT */}
+          <div className="space-y-3 pt-2">
+            <h3 className="font-bold text-xs sm:text-sm text-stone-900 flex items-center gap-1.5">
+              <MapPin className="w-4 h-4 text-amber-800" />
+              <span>
+                {language === 'he'
+                  ? 'הקשר גיאוגרפי ותחבורה (אין הנחה אוטומטית שדרושה טיסה):'
+                  : 'Geographic Context & Transport (Zero automatic flight assumptions):'}
+              </span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                <span className="text-[11px] font-bold text-stone-500 block">
+                  {language === 'he' ? 'מגורים קבועים:' : 'Permanent Home:'}
+                </span>
+                <span className="font-semibold text-stone-900">
+                  {parsedResult.locations.permanentHome || (language === 'he' ? 'לא הוגדר בפרופיל' : 'Not set')}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                <span className="text-[11px] font-bold text-stone-500 block">
+                  {language === 'he' ? 'נקודת יציאה לפעילות זו:' : 'Departure for this activity:'}
+                </span>
+                <span className="font-semibold text-stone-900">
+                  {parsedResult.locations.activityDepartureLocation || (language === 'he' ? 'טרם צוין' : 'Unspecified')}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-stone-50 border border-stone-200">
+                <span className="text-[11px] font-bold text-stone-500 block">
+                  {language === 'he' ? 'יעד / מקום הפעילות:' : 'Destination:'}
+                </span>
+                <span className="font-semibold text-stone-900">
+                  {parsedResult.locations.destinationLocation || (language === 'he' ? 'בכפוף לפעילות הנבחרת' : 'Depends on activity')}
+                </span>
+              </div>
+            </div>
+
+            {/* Transport Mode Note */}
+            <div className="text-xs text-stone-600 bg-stone-100 p-2.5 rounded-xl border border-stone-200 flex items-center gap-2">
+              <Info className="w-4 h-4 text-stone-600 shrink-0" />
+              <span>
+                {parsedResult.isFlightImplied
+                  ? (language === 'he'
+                      ? 'היעד מחוץ לישראל / כולל טיסה בינלאומית'
+                      : 'International flight implied')
+                  : (language === 'he'
+                      ? 'פעילות מקומית — הגעה ברכב, הליכה או תחבורה יבשתית (ללא צורך בטיסות)'
+                      : 'Local activity — private car, walking, or transit (no flight needed)')}
+              </span>
+            </div>
+          </div>
+
+          {/* CONCEPTUAL IDEAS & EXTERNAL SOURCE NOTICE (Task 5) */}
+          <div className="space-y-3 pt-3 border-t border-stone-200">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-xs sm:text-sm text-stone-900 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-800" />
+                <span>
+                  {language === 'he'
+                    ? 'רעיונות להשראה (הפרדה ברורה מתוצאות מאומתות):'
+                    : 'Conceptual Inspirations (Clearly separated from verified results):'}
+                </span>
+              </h3>
+              <span className="text-[11px] text-stone-500">
+                {language === 'he' ? 'מקורות חיצוניים אינם מחוברים' : 'External APIs not connected'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {parsedResult.conceptualIdeas.map((idea) => (
+                <div
+                  key={idea.id}
+                  className="p-4 rounded-2xl border border-stone-200 bg-white space-y-2.5 shadow-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-sm text-stone-900 block">{idea.titleHe}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-200 shrink-0">
+                      {idea.category}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-stone-600 leading-relaxed">{idea.descriptionHe}</p>
+
+                  <div className="text-[11px] font-bold text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                    {idea.disclaimerHe}
                   </div>
                 </div>
               ))}
